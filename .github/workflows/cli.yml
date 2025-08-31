@@ -16,9 +16,7 @@ jobs:
         uses: KSXGitHub/github-actions-deploy-aur@v2
         env:
           INPUT_SSH_KEYSCAN_TYPES: "rsa,dsa,ecdsa,ed25519"
-        with:
-          pkgname: wayclip-cli
-          pkgbuild: |
+          INPUT_PKGBUILD: |
             # Maintainer: konyogony <dev@wayclip.com>
             pkgname=wayclip-cli
             pkgver=$(echo "${GITHUB_REF}" | sed 's/refs\/tags\/v//')
@@ -29,8 +27,14 @@ jobs:
             license=('MIT')
             depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd')
             makedepends=('rust' 'cargo')
-            source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
-            sha256sums=('SKIP')
+
+            source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+                    "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${pkgver}/wayclip-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz"
+                    "wayclip-daemon.service")
+
+            sha256sums=('SKIP'
+                        'SKIP'
+                        'SKIP')
 
             prepare() {
               cd "$srcdir/cli-$pkgver"
@@ -50,7 +54,14 @@ jobs:
             package() {
               cd "$srcdir/cli-$pkgver"
               install -Dm755 "target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+
+              install -Dm755 "$srcdir/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+              install -Dm755 "$srcdir/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+
+              install -Dm644 "$srcdir/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
             }
+        with:
+          pkgname: wayclip-cli
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
