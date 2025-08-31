@@ -14,6 +14,8 @@ jobs:
 
       - name: Update PKGBUILD and push to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2
+        env:
+          INPUT_SSH_KEYSCAN_TYPES: "rsa,dsa,ecdsa,ed25519"
         with:
           pkgname: wayclip-cli
           pkgbuild: |
@@ -54,4 +56,3 @@ jobs:
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to version ${{ github.ref_name }}"
           updpkgsums: true
-          ssh_keyscan_types: rsa,dsa,ecdsa,ed25519
