@@ -47,9 +47,6 @@ jobs:
                       'SKIP')
 
           prepare() {
-            mv "\$srcdir"/wayclip-v*/daemon "\$srcdir/"
-            mv "\$srcdir"/wayclip-v*/trigger "\$srcdir/"
-
             cd "\$srcdir/cli-\$pkgver"
           }
 
@@ -67,8 +64,7 @@ jobs:
           }
 
           package() {
-            cd "\$srcdir/cli-\$pkgver"
-            install -Dm755 "target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
+            install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
 
             install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
             install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
