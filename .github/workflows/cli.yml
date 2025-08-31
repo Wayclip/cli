@@ -52,5 +52,5 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to version $(echo \"${GITHUB_REF}\" | sed 's/refs\/tags\///')"
+          commit_message: "Update to version ${{ github.ref_name }}"
           updpkgsums: true
