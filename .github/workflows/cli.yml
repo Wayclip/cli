@@ -19,13 +19,6 @@ jobs:
       - name: Update PKGBUILD and push to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2
         env:
-          INPUT_SSH_KEYSCAN_TYPES: "rsa,dsa,ecdsa,ed25519"
-          INPUT_PKGNAME: "wayclip-cli"
-          INPUT_COMMIT_USERNAME: ${{ secrets.AUR_USERNAME }}
-          INPUT_COMMIT_EMAIL: ${{ secrets.AUR_EMAIL }}
-          INPUT_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          INPUT_COMMIT_MESSAGE: "Update to version v${{ env.PKG_VER }}"
-          INPUT_UPDPKGSUMS: "true"
           INPUT_PKGBUILD: |
             # Maintainer: konyogony <dev@wayclip.com>
             pkgname=wayclip-cli
@@ -70,3 +63,11 @@ jobs:
 
               install -Dm644 "$srcdir/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
             }
+        with:
+          pkgname: "wayclip-cli"
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version v${{ env.PKG_VER }}"
+          updpkgsums: "true"
+          ssh_keyscan_types: "rsa,dsa,ecdsa,ed25519"
