@@ -29,22 +29,22 @@ jobs:
             makedepends=('rust' 'cargo')
             source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
             sha256sums=('SKIP')
-
+            
             prepare() {
               cd "$srcdir/cli-$pkgver"
             }
-
+            
             build() {
               cd "$srcdir/cli-$pkgver"
               export RUSTUP_TOOLCHAIN=stable
               cargo build --release --locked
             }
-
+            
             check() {
               cd "$srcdir/cli-$pkgver"
               cargo test --locked
             }
-
+            
             package() {
               cd "$srcdir/cli-$pkgver"
               install -Dm755 "target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
