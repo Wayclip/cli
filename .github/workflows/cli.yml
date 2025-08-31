@@ -15,42 +15,42 @@ jobs:
       - name: Update PKGBUILD and push to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
         with:
-          pkgname: your-cli-name
+          pkgname: wayclip-cli
           pkgbuild: |
-            # Maintainer: konyogony <support@wayclip.com>
+            # Maintainer: konyogony <dev@wayclip.com>
             pkgname=wayclip-cli
-            pkgver=${{ github.ref_name#v }}
+            pkgver=$(echo "${GITHUB_REF}" | sed 's/refs\/tags\/v//')
             pkgrel=1
             pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
             arch=('x86_64')
             url="https://github.com/wayclip/cli"
             license=('MIT')
-            depends=()
+            depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd')
             makedepends=('rust' 'cargo')
             source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
             sha256sums=('SKIP')
 
             prepare() {
-              cd "$srcdir/$pkgname-$pkgver"
+              cd "$srcdir/cli-$pkgver"
             }
 
             build() {
-              cd "$srcdir/$pkgname-$pkgver"
+              cd "$srcdir/cli-$pkgver"
               export RUSTUP_TOOLCHAIN=stable
               cargo build --release --locked
             }
 
             check() {
-              cd "$srcdir/$pkgname-$pkgver"
+              cd "$srcdir/cli-$pkgver"
               cargo test --locked
             }
 
             package() {
-              cd "$srcdir/$pkgname-$pkgver"
+              cd "$srcdir/cli-$pkgver"
               install -Dm755 "target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
             }
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to version ${{ github.ref_name }}"
+          commit_message: "Update to version $(echo "${GITHUB_REF}" | sed 's/refs\/tags\///')"
           updpkgsums: true
