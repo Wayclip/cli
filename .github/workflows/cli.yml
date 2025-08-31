@@ -76,3 +76,4 @@ jobs:
           commit_message: "Update to version v${{ env.PKG_VER }}"
           updpkgsums: "true"
           ssh_keyscan_types: "rsa,ecdsa,ed25519"
+          post_process: rm -f "wayclip-cli-${{ env.PKG_VER }}.tar.gz" "wayclip-core.tar.gz"
