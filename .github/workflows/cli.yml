@@ -52,6 +52,8 @@ jobs:
 
           build() {
             cd "\$srcdir/cli-\$pkgver"
+            export CFLAGS+=" -ffat-lto-objects"
+            export CXXFLAGS+=" -ffat-lto-objects"
             export RUSTUP_TOOLCHAIN=stable
             cargo build --release
           }
