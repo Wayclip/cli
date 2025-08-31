@@ -39,7 +39,7 @@ jobs:
           makedepends=('rust' 'cargo')
 
           source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\${pkgver}.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v\${CORE_VER}/wayclip-v\${CORE_VER}-x86_64-unknown-linux-gnu.tar.gz"
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${CORE_VER}/wayclip-v${CORE_VER}-x86_64-unknown-linux-gnu.tar.gz"
                   "wayclip-daemon.service")
 
           sha256sums=('SKIP'
