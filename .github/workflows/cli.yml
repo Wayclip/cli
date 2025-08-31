@@ -21,7 +21,7 @@ jobs:
           cat <<EOF > PKGBUILD
           # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
-          pkgver=\${PKG_VER}
+          pkgver=${PKG_VER}
           pkgrel=1
           pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
           arch=('x86_64')
@@ -65,13 +65,14 @@ jobs:
           EOF
 
       - name: Update PKGBUILD and push to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgbuild: ./PKGBUILD
           pkgname: "wayclip-cli"
+          assets: "wayclip-daemon.service"
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to version v${{ env.PKG_VER }}"
           updpkgsums: "true"
-          ssh_keyscan_types: "rsa,dsa,ecdsa,ed25519"
+          ssh_keyscan_types: "rsa,ecdsa,ed25519"
