@@ -47,8 +47,8 @@ jobs:
                       'SKIP')
 
           prepare() {
-            mv "\$srcdir/wayclip-core/daemon" "\$srcdir/"
-            mv "\$srcdir/wayclip-core/trigger" "\$srcdir/"
+            mv "\$srcdir/wayclip-binaries/daemon" "\$srcdir/"
+            mv "\$srcdir/wayclip-binaries/trigger" "\$srcdir/"
 
             cd "\$srcdir/cli-\$pkgver"
           }
