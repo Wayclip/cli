@@ -1,0 +1,56 @@
+name: Wayclip CLI publish to AUR
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Update PKGBUILD and push to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
+        with:
+          pkgname: your-cli-name
+          pkgbuild: |
+            # Maintainer: konyogony <support@wayclip.com>
+            pkgname=wayclip-cli
+            pkgver=${{ github.ref_name#v }}
+            pkgrel=1
+            pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
+            arch=('x86_64')
+            url="https://github.com/wayclip/cli"
+            license=('MIT')
+            depends=()
+            makedepends=('rust' 'cargo')
+            source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+            sha256sums=('SKIP')
+
+            prepare() {
+              cd "$srcdir/$pkgname-$pkgver"
+            }
+
+            build() {
+              cd "$srcdir/$pkgname-$pkgver"
+              export RUSTUP_TOOLCHAIN=stable
+              cargo build --release --locked
+            }
+
+            check() {
+              cd "$srcdir/$pkgname-$pkgver"
+              cargo test --locked
+            }
+
+            package() {
+              cd "$srcdir/$pkgname-$pkgver"
+              install -Dm755 "target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+            }
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version ${{ github.ref_name }}"
+          updpkgsums: true
