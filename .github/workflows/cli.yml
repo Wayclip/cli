@@ -16,54 +16,58 @@ jobs:
         id: get_version
         run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
+      - name: Generate PKGBUILD
+        run: |
+          cat <<EOF > PKGBUILD
+          # Maintainer: konyogony <dev@wayclip.com>
+          pkgname=wayclip-cli
+          pkgver=\${PKG_VER}
+          pkgrel=1
+          pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
+          arch=('x86_64')
+          url="https://github.com/wayclip/cli"
+          license=('MIT')
+          depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd')
+          makedepends=('rust' 'cargo')
+
+          source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\${pkgver}.tar.gz"
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v\${pkgver}/wayclip-v\${pkgver}-x86_64-unknown-linux-gnu.tar.gz"
+                  "wayclip-daemon.service")
+
+          sha256sums=('SKIP'
+                      'SKIP'
+                      'SKIP')
+
+          prepare() {
+            cd "\$srcdir/cli-\$pkgver"
+          }
+
+          build() {
+            cd "\$srcdir/cli-\$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            cargo build --release --locked
+          }
+
+          check() {
+            cd "\$srcdir/cli-\$pkgver"
+            cargo test --locked
+          }
+
+          package() {
+            cd "\$srcdir/cli-\$pkgver"
+            install -Dm755 "target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
+
+            install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
+
+            install -Dm644 "\$srcdir/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+          }
+          EOF
+
       - name: Update PKGBUILD and push to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2
-        env:
-          INPUT_PKGBUILD: |
-            # Maintainer: konyogony <dev@wayclip.com>
-            pkgname=wayclip-cli
-            pkgver=${{ env.PKG_VER }}
-            pkgrel=1
-            pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
-            arch=('x86_64')
-            url="https://github.com/wayclip/cli"
-            license=('MIT')
-            depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd')
-            makedepends=('rust' 'cargo')
-
-            source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
-                    "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${pkgver}/wayclip-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz"
-                    "wayclip-daemon.service")
-
-            sha256sums=('SKIP'
-                        'SKIP'
-                        'SKIP')
-
-            prepare() {
-              cd "$srcdir/cli-$pkgver"
-            }
-
-            build() {
-              cd "$srcdir/cli-$pkgver"
-              export RUSTUP_TOOLCHAIN=stable
-              cargo build --release --locked
-            }
-
-            check() {
-              cd "$srcdir/cli-$pkgver"
-              cargo test --locked
-            }
-
-            package() {
-              cd "$srcdir/cli-$pkgver"
-              install -Dm755 "target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
-
-              install -Dm755 "$srcdir/daemon" "$pkgdir/usr/bin/wayclip-daemon"
-              install -Dm755 "$srcdir/trigger" "$pkgdir/usr/bin/wayclip-trigger"
-
-              install -Dm644 "$srcdir/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
-            }
         with:
+          pkgbuild: ./PKGBUILD
           pkgname: "wayclip-cli"
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
