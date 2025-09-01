@@ -53,7 +53,7 @@ jobs:
             tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
             tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
 
-            local core_dir="core-\${CORE_VER}"
+            local core_dir="core-${CORE_VER}"
             local cli_dir="cli-\$pkgver"
 
             cd "\$srcdir/\$core_dir"
@@ -65,7 +65,7 @@ jobs:
           }
 
           build() {
-            local core_dir="core-\${CORE_VER}"
+            local core_dir="core-${CORE_VER}"
             local cli_dir="cli-\$pkgver"
 
             export CFLAGS+=" -ffat-lto-objects"
