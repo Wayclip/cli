@@ -38,8 +38,8 @@ jobs:
           license=('MIT')
           depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd')
           makedepends=('rust' 'cargo')
-          provides=('wayclip')
-          conflicts=('wayclip')
+          provides=('wayclip-cli')
+          conflicts=('wayclip-cli')
 
           source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/archive/refs/tags/v${CORE_VER}.tar.gz"
@@ -79,7 +79,7 @@ jobs:
 
             cd "\$srcdir/\$cli_dir"
             cargo build --release --frozen
-            mv target/release/wayclip_cli "\$srcdir/wayclip"
+            mv target/release/wayclip_cli "\$srcdir/wayclip-cli"
           }
 
           check() {
@@ -89,7 +89,7 @@ jobs:
           }
 
           package() {
-            install -Dm755 "\$srcdir/wayclip" "\$pkgdir/usr/bin/wayclip"
+            install -Dm755 "\$srcdir/wayclip-cli" "\$pkgdir/usr/bin/wayclip-cli"
 
             install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
             install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
