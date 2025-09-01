@@ -79,7 +79,7 @@ jobs:
 
             cd "\$srcdir/\$cli_dir"
             cargo build --release --frozen
-            mv target/release/wayclip-cli "\$srcdir/wayclip"
+            mv target/release/wayclip_cli "\$srcdir/wayclip"
           }
 
           check() {
