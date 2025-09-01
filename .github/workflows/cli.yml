@@ -12,23 +12,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Get CLI version from tag
-        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-
-      - name: Get pinned core version
+      - name: Set Environment from Tag and API
         run: |
-          if [ ! -f .core-version ]; then
-            echo "Error: .core-version file not found. Please create it and add the wayclip-core version string."
+          echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+          echo "Fetching latest core version..."
+          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
+          if [ -z "$CORE_TAG" ] || [ "$CORE_TAG" == "null" ]; then
+            echo "Error: Failed to fetch latest core tag from GitHub API."
             exit 1
           fi
-          echo "CORE_VER=$(cat .core-version)" >> $GITHUB_ENV
+          echo "CORE_VER=${CORE_TAG#v}" >> $GITHUB_ENV
+          echo "Using Core version: ${CORE_TAG#v}"
 
       - name: Generate PKGBUILD
         run: |
           cat <<EOF > PKGBUILD
           # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
-          pkgver=\${PKG_VER}
+          pkgver=${PKG_VER}
           pkgrel=1
           pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
           arch=('x86_64')
@@ -40,7 +42,7 @@ jobs:
           conflicts=('wayclip')
 
           source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\$pkgver.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v\${CORE_VER}/wayclip-v\${CORE_VER}-x86_64-unknown-linux-gnu.tar.gz"
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/archive/refs/tags/v${CORE_VER}.tar.gz"
                   "wayclip-daemon.service")
 
           sha256sums=('SKIP'
@@ -48,20 +50,23 @@ jobs:
                       'SKIP')
 
           prepare() {
+            tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
             tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
-            
-            local core_dir="wayclip-v\${CORE_VER}-x86_64-unknown-linux-gnu"
-            mv "\$srcdir/\$core_dir/daemon" "\$srcdir/"
-            mv "\$srcdir/\$core_dir/trigger" "\$srcdir/"
-
-            cd "\$srcdir/\$pkgname-\$pkgver"
           }
 
           build() {
-            cd "\$srcdir/\$pkgname-\$pkgver"
+            local core_dir="core-v${CORE_VER}"
+
             export CFLAGS+=" -ffat-lto-objects"
             export CXXFLAGS+=" -ffat-lto-objects"
             export RUSTUP_TOOLCHAIN=stable
+
+            cd "\$srcdir/\$core_dir"
+            cargo build --release --locked
+            mv target/release/daemon "\$srcdir/daemon"
+            mv target/release/trigger "\$srcdir/trigger"
+
+            cd "\$srcdir/\$pkgname-\$pkgver"
             cargo build --release --locked
           }
 
@@ -91,5 +96,3 @@ jobs:
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to version v${{ env.PKG_VER }}"
           updpkgsums: "true"
-          ssh_keyscan_types: "rsa,ecdsa,ed25519"
-          post_process: rm -f "wayclip-cli-${{ env.PKG_VER }}.tar.gz" "wayclip-core.tar.gz"
