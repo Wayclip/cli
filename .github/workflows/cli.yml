@@ -79,6 +79,7 @@ jobs:
 
             cd "\$srcdir/\$cli_dir"
             cargo build --release --frozen
+            mv target/release/wayclip "\$srcdir/wayclip"
           }
 
           check() {
@@ -88,8 +89,7 @@ jobs:
           }
 
           package() {
-            local cli_dir="cli-\$pkgver"
-            install -Dm755 "\$srcdir/\$cli_dir/target/release/wayclip" "\$pkgdir/usr/bin/wayclip"
+            install -Dm755 "\$srcdir/wayclip" "\$pkgdir/usr/bin/wayclip"
 
             install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
             install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
