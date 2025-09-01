@@ -61,7 +61,7 @@ jobs:
             cargo fetch
 
             cd "\$srcdir/\$cli_dir"
-            cargo fetch --locked
+            cargo update
           }
 
           build() {
