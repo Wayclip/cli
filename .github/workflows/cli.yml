@@ -55,7 +55,8 @@ jobs:
           }
 
           build() {
-            local core_dir="core-v${CORE_VER}"
+            local core_dir="core-${CORE_VER}"
+            local cli_dir="cli-\$pkgver"
 
             export CFLAGS+=" -ffat-lto-objects"
             export CXXFLAGS+=" -ffat-lto-objects"
@@ -66,17 +67,19 @@ jobs:
             mv target/release/daemon "\$srcdir/daemon"
             mv target/release/trigger "\$srcdir/trigger"
 
-            cd "\$srcdir/\$pkgname-\$pkgver"
+            cd "\$srcdir/\$cli_dir"
             cargo build --release --locked
           }
 
           check() {
-            cd "\$srcdir/\$pkgname-\$pkgver"
+            local cli_dir="cli-\$pkgver"
+            cd "\$srcdir/\$cli_dir"
             cargo test
           }
 
           package() {
-            install -Dm755 "\$srcdir/\$pkgname-\$pkgver/target/release/wayclip" "\$pkgdir/usr/bin/wayclip"
+            local cli_dir="cli-\$pkgver"
+            install -Dm755 "\$srcdir/\$cli_dir/target/release/wayclip" "\$pkgdir/usr/bin/wayclip"
 
             install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
             install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
