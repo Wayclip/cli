@@ -4,7 +4,7 @@ use crate::manage::handle_manage;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use colored::*;
-use inquire::{Confirm, Text};
+use inquire::{Confirm, Select, Text};
 use std::env;
 use std::path::Path;
 use std::process::ExitCode;
@@ -118,7 +118,12 @@ async fn run() -> Result<()> {
         Commands::View { name, player } => handle_view(name, player.as_deref()).await?,
         Commands::Rename { name } => handle_rename(name).await?,
         Commands::Delete { name } => handle_delete(name).await?,
-        Commands::Edit { .. } => println!("Editing clip..."),
+        Commands::Edit {
+            name,
+            start_time,
+            end_time,
+            disable_audio,
+        } => handle_edit(name, start_time, end_time, disable_audio).await?,
         Commands::Daemon { action } => {
             let manager = DaemonManager::new();
             match action {
@@ -185,7 +190,7 @@ async fn handle_share(clip_name: &str) -> Result<()> {
     let clip_path = if clip_name.ends_with(".mp4") {
         clips_path.join(clip_name)
     } else {
-        clips_path.join(format!("{}.mp4", clip_name))
+        clips_path.join(format!("{clip_name}.mp4"))
     };
 
     if !clip_path.exists() {
@@ -313,10 +318,10 @@ async fn handle_rename(name: &str) -> Result<()> {
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("mp4");
-    let new_full_name = format!("{}.{}", new_name_stem, extension);
+    let new_full_name = format!("{new_name_stem}.{extension}");
 
     match rename_all_entries(&clip_to_rename.path, &new_full_name).await {
-        Ok(_) => println!("{}", format!("✔ Renamed to '{}'", new_full_name).green()),
+        Ok(_) => println!("{}", format!("✔ Renamed to '{new_full_name}'").green()),
         Err(e) => bail!("Failed to rename: {}", e),
     }
     Ok(())
@@ -365,6 +370,109 @@ async fn handle_delete(name: &str) -> Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         println!("{}", "✔ Local file deleted.".green());
+    }
+
+    Ok(())
+}
+
+async fn handle_edit(
+    name: &str,
+    start_time: &str,
+    end_time: &str,
+    disable_audio: &bool,
+) -> Result<()> {
+    println!("{} '{}'...", "Preparing to edit".cyan(), name);
+    println!(
+        "{}",
+        "Note: This operation is performed locally and does not affect hosted clips.".yellow()
+    );
+
+    let settings = Settings::load().await?;
+    let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
+    let clip_path = if name.ends_with(".mp4") {
+        clips_path.join(name)
+    } else {
+        clips_path.join(format!("{name}.mp4"))
+    };
+
+    if !clip_path.exists() {
+        bail!("Clip '{}' not found locally.", name);
+    }
+
+    let options = vec!["Create a new, edited copy", "Modify the original file"];
+    let choice = Select::new("What would you like to do?", options).prompt()?;
+
+    let (output_path, is_overwrite) = if choice == "Create a new, edited copy" {
+        let file_stem = Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("edited_clip");
+        let new_name_suggestion = format!("{file_stem}_edited");
+        let new_name = Text::new("Enter name for the new clip (without extension):")
+            .with_initial_value(&new_name_suggestion)
+            .prompt()?;
+        (clip_path.with_file_name(format!("{new_name}.mp4")), false)
+    } else {
+        let confirmed = Confirm::new("Modifying the original file cannot be undone. Are you sure?")
+            .with_default(false)
+            .prompt()?;
+        if !confirmed {
+            println!("{}", "Edit cancelled.".yellow());
+            return Ok(());
+        }
+        (clip_path.clone(), true)
+    };
+
+    let temp_output_path = output_path.with_extension("tmp.mp4");
+
+    println!("{}", "Processing clip...".yellow());
+
+    let mut command = Command::new("ffmpeg");
+    command
+        .arg("-i")
+        .arg(&clip_path)
+        .arg("-ss")
+        .arg(start_time)
+        .arg("-to")
+        .arg(end_time)
+        .arg("-c:v")
+        .arg("copy");
+
+    if *disable_audio {
+        command.arg("-an");
+    } else {
+        command.arg("-c:a").arg("copy");
+    }
+
+    command.arg(&temp_output_path);
+
+    let output = command
+        .output()
+        .await
+        .context("Failed to execute ffmpeg. Is it installed and in your PATH?")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("ffmpeg failed with status: {}\n{}", output.status, stderr);
+    }
+
+    if is_overwrite {
+        tokio::fs::rename(&temp_output_path, &clip_path)
+            .await
+            .context("Failed to replace original file")?;
+        println!("{}", "✔ Original clip successfully modified.".green());
+    } else {
+        tokio::fs::rename(&temp_output_path, &output_path)
+            .await
+            .context("Failed to save new clip")?;
+        println!(
+            "{}",
+            format!(
+                "✔ New clip saved as '{}'",
+                output_path.file_name().unwrap().to_str().unwrap()
+            )
+            .green()
+        );
     }
 
     Ok(())

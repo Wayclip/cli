@@ -1,4 +1,4 @@
-use crate::{handle_share, handle_view};
+use crate::{handle_edit, handle_share, handle_view};
 use anyhow::Result;
 use arboard::Clipboard;
 use chrono::Utc;
@@ -67,11 +67,11 @@ pub async fn handle_manage() -> Result<()> {
             let display_name = format!(
                 "{} {} {}{}{}",
                 if clip.local_path.is_some() {
-                    "💻"
+                    "⌨"
                 } else {
                     "  "
                 },
-                if clip.is_hosted { "🌐" } else { "  " },
+                if clip.is_hosted { "☁" } else { "  " },
                 clip.local_data
                     .as_ref()
                     .map_or("".normal(), |d| if d.liked {
@@ -113,12 +113,13 @@ pub async fn handle_manage() -> Result<()> {
 
         let mut options = Vec::new();
         if selected_clip.is_hosted {
-            options.push("🔗 Open URL");
-            options.push("📋 Copy URL");
+            options.push("⌂ Open URL");
+            options.push("☐ Copy URL");
         }
         if selected_clip.local_path.is_some() {
             options.push("▷ View Local File");
             options.push("✎ Rename");
+            options.push("✎ Edit");
             options.push("⎘ Copy Name");
             if selected_clip.local_data.as_ref().map_or(false, |d| d.liked) {
                 options.push("♡ Unlike");
@@ -130,10 +131,10 @@ pub async fn handle_manage() -> Result<()> {
             options.push("↗ Share");
         }
         if selected_clip.is_hosted {
-            options.push("🗑️ Delete Server Copy");
+            options.push("⌫ Delete Server Copy");
         }
         if selected_clip.local_path.is_some() {
-            options.push("🗑️ Delete Local File");
+            options.push("⌫ Delete Local File");
         }
         options.push("← Back to List");
 
@@ -150,7 +151,7 @@ pub async fn handle_manage() -> Result<()> {
 
         match action {
             "▷ View Local File" => handle_view(&selected_clip.full_filename, None).await?,
-            "🔗 Open URL" => {
+            "⌂ Open URL" => {
                 let public_url = format!(
                     "{}/clip/{}",
                     settings.api_url,
@@ -178,6 +179,25 @@ pub async fn handle_manage() -> Result<()> {
                 }
                 continue 'main_loop;
             }
+            "✎ Edit" => {
+                let start_time = Text::new("Enter start time (e.g., 00:00:05 or 5):").prompt()?;
+                let end_time = Text::new("Enter end time (e.g., 00:00:10 or 10):").prompt()?;
+                let disable_audio = Confirm::new("Disable audio?")
+                    .with_default(false)
+                    .prompt()?;
+
+                if let Err(e) = handle_edit(
+                    &selected_clip.full_filename,
+                    &start_time,
+                    &end_time,
+                    &disable_audio,
+                )
+                .await
+                {
+                    println!("{} {}", "✗ Edit failed:".red(), e);
+                }
+                continue 'main_loop;
+            }
             "⎘ Copy Name" => {
                 clipboard.set_text(&selected_clip.name)?;
                 thread::sleep(Duration::from_millis(100));
@@ -197,7 +217,7 @@ pub async fn handle_manage() -> Result<()> {
                 }
                 continue 'main_loop;
             }
-            "📋 Copy URL" => {
+            "☐ Copy URL" => {
                 if let Some(id) = selected_clip.hosted_id {
                     let public_url = format!("{}/clip/{}", settings.api_url, id);
                     clipboard.set_text(public_url)?;
@@ -205,7 +225,7 @@ pub async fn handle_manage() -> Result<()> {
                     println!("{}", "✔ Public URL copied to clipboard!".green());
                 }
             }
-            "🗑️ Delete Server Copy" => {
+            "⌫ Delete Server Copy" => {
                 let confirmed =
                     Confirm::new("Are you sure? This will delete the clip from the server.")
                         .with_default(false)
@@ -217,7 +237,7 @@ pub async fn handle_manage() -> Result<()> {
                 }
                 continue 'main_loop;
             }
-            "🗑️ Delete Local File" => {
+            "⌫ Delete Local File" => {
                 let confirmed = Confirm::new("Are you sure? This will delete the local file.")
                     .with_default(false)
                     .prompt()?;
