@@ -52,10 +52,20 @@ jobs:
           prepare() {
             tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
             tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
+
+            local core_dir="core-\${CORE_VER}"
+            local cli_dir="cli-\$pkgver"
+
+            cd "\$srcdir/\$core_dir"
+            cargo update
+            cargo fetch
+
+            cd "\$srcdir/\$cli_dir"
+            cargo fetch --locked
           }
 
           build() {
-            local core_dir="core-${CORE_VER}"
+            local core_dir="core-\${CORE_VER}"
             local cli_dir="cli-\$pkgver"
 
             export CFLAGS+=" -ffat-lto-objects"
@@ -63,18 +73,18 @@ jobs:
             export RUSTUP_TOOLCHAIN=stable
 
             cd "\$srcdir/\$core_dir"
-            cargo build --release --locked
+            cargo build --release --frozen
             mv target/release/daemon "\$srcdir/daemon"
             mv target/release/trigger "\$srcdir/trigger"
 
             cd "\$srcdir/\$cli_dir"
-            cargo build --release --locked
+            cargo build --release --frozen
           }
 
           check() {
             local cli_dir="cli-\$pkgver"
             cd "\$srcdir/\$cli_dir"
-            cargo test
+            cargo test --frozen
           }
 
           package() {
