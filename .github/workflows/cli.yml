@@ -174,14 +174,14 @@ jobs:
 
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
-          HERE=\$(dirname \$0)
-          exec \$HERE/usr/bin/wayclip-cli "\$@"
+          HERE=$(dirname $0)
+          exec $HERE/usr/bin/wayclip_cli "$@"
           EOF
 
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
 
       - name: Create Release and Upload AppImage
         uses: softprops/action-gh-release@v1
