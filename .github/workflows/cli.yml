@@ -12,6 +12,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            build-essential \
+            libglib2.0-dev \
+            libssl-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            libavutil-dev \
+            libswscale-dev
+
       - name: Set Environment from Tag and API
         run: |
           echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
