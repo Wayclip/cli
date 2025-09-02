@@ -15,9 +15,9 @@ jobs:
           path: cli
 
       - name: Setup Rust
-        uses: actions/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          rust-version: stable
+          toolchain: stable
 
       - name: Install system dependencies
         run: |
@@ -52,8 +52,12 @@ jobs:
           fi
           curl -s -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$TARBALL_URL" | \
             tar -xzf - -C core
-          echo "Extracted core tarball:"
+          echo "Extracted core tarball contents:"
           ls -lR core
+          # Verify binaries exist
+          for bin in core/wayclip-${{ env.CORE_VER }}/target/release/daemon core/wayclip-${{ env.CORE_VER }}/target/release/trigger; do
+            [ -f "$bin" ] || { echo "Error: Binary $bin not found in tarball"; exit 1; }
+          done
 
       - name: Build CLI binary
         run: |
@@ -61,6 +65,7 @@ jobs:
           cd cli
           cargo build --release
           cd ..
+          [ -f cli/target/release/wayclip_cli ] || { echo "Error: wayclip_cli binary not found"; exit 1; }
 
       - name: Prepare artifacts for release and upload
         run: |
@@ -102,14 +107,12 @@ jobs:
           prepare() {
             tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
             tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
-
             cd "\$srcdir/cli-\$pkgver"
             cargo fetch
           }
 
           build() {
             export RUSTUP_TOOLCHAIN=stable
-
             cd "\$srcdir/cli-\$pkgver"
             cargo build --release --frozen
           }
