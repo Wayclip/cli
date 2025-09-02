@@ -118,7 +118,7 @@ jobs:
           build() {
             export RUSTUP_TOOLCHAIN=stable
             cd "\$srcdir/cli-\$pkgver"
-            cargo build --release --frozen
+            cargo build --release
           }
 
           package() {
