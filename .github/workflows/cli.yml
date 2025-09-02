@@ -59,7 +59,7 @@ jobs:
           echo "Extracted core tarball contents:"
           ls -lR core
           # Verify binaries exist
-          for bin in core/wayclip-v${{ env.CORE_VER }}/target/release/daemon core/wayclip-v${{ env.CORE_VER }}/target/release/trigger; do
+          for bin in core/wayclip-binaries/daemon core/wayclip-binaries/trigger; do
             [ -f "$bin" ] || { echo "Error: Binary $bin not found in tarball"; exit 1; }
           done
 
@@ -74,8 +74,8 @@ jobs:
       - name: Prepare artifacts for release and upload
         run: |
           mkdir -p release_binaries
-          cp core/wayclip-v${{ env.CORE_VER }}/target/release/daemon release_binaries/
-          cp core/wayclip-v${{ env.CORE_VER }}/target/release/trigger release_binaries/
+          cp core/wayclip-binaries/daemon release_binaries/
+          cp core/wayclip-binaries/trigger release_binaries/
           cp cli/target/release/wayclip_cli release_binaries/
           echo "Binaries collected:"
           ls -l release_binaries
@@ -123,8 +123,8 @@ jobs:
 
           package() {
             install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
-            install -Dm755 "\$srcdir/wayclip-v${{ env.CORE_VER }}/target/release/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "\$srcdir/wayclip-v${{ env.CORE_VER }}/target/release/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
+            install -Dm755 "\$srcdir/wayclip-binaries/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "\$srcdir/wayclip-binaries/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
             install -Dm644 "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
