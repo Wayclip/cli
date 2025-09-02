@@ -160,6 +160,11 @@ jobs:
       - name: Set Environment from Tag
         run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
+      - name: Install FUSE
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
