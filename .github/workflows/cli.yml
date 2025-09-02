@@ -43,11 +43,15 @@ jobs:
       - name: Download and Extract Core release tarball
         run: |
           mkdir -p core
+          echo "Available assets in latest release:"
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Wayclip/core/releases/latest" | \
+            jq -r '.assets[] | .name'
           TARBALL_URL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/Wayclip/core/releases/latest" | \
-            jq -r '.assets[] | select(.name == "wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+            jq -r '.assets[] | select(.name == "wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
           if [ -z "$TARBALL_URL" ]; then
-            echo "Error: Could not find tarball wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz in latest release."
+            echo "Error: Could not find tarball wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz in latest release."
             exit 1
           fi
           curl -s -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$TARBALL_URL" | \
@@ -55,7 +59,7 @@ jobs:
           echo "Extracted core tarball contents:"
           ls -lR core
           # Verify binaries exist
-          for bin in core/wayclip-${{ env.CORE_VER }}/target/release/daemon core/wayclip-${{ env.CORE_VER }}/target/release/trigger; do
+          for bin in core/wayclip-v${{ env.CORE_VER }}/target/release/daemon core/wayclip-v${{ env.CORE_VER }}/target/release/trigger; do
             [ -f "$bin" ] || { echo "Error: Binary $bin not found in tarball"; exit 1; }
           done
 
@@ -70,8 +74,8 @@ jobs:
       - name: Prepare artifacts for release and upload
         run: |
           mkdir -p release_binaries
-          cp core/wayclip-${{ env.CORE_VER }}/target/release/daemon release_binaries/
-          cp core/wayclip-${{ env.CORE_VER }}/target/release/trigger release_binaries/
+          cp core/wayclip-v${{ env.CORE_VER }}/target/release/daemon release_binaries/
+          cp core/wayclip-v${{ env.CORE_VER }}/target/release/trigger release_binaries/
           cp cli/target/release/wayclip_cli release_binaries/
           echo "Binaries collected:"
           ls -l release_binaries
@@ -102,7 +106,7 @@ jobs:
           conflicts=('wayclip-cli')
 
           source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\$pkgver.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
 
           prepare() {
             tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
@@ -119,8 +123,8 @@ jobs:
 
           package() {
             install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
-            install -Dm755 "\$srcdir/wayclip-${{ env.CORE_VER }}/target/release/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "\$srcdir/wayclip-${{ env.CORE_VER }}/target/release/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
+            install -Dm755 "\$srcdir/wayclip-v${{ env.CORE_VER }}/target/release/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "\$srcdir/wayclip-v${{ env.CORE_VER }}/target/release/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
             install -Dm644 "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
