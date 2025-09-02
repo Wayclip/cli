@@ -140,7 +140,7 @@ jobs:
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to version v${{ env.PKG_VER }}"
           updpkgsums: "true"
-          ssh_keyscan_types: "rsa,dsa,ecdsa,ed25519 -v"
+          ssh_keyscan_types: "rsa,ecdsa,ed25519 -v"
 
   release:
     runs-on: ubuntu-latest
