@@ -6,45 +6,33 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
-  publish:
+  build_and_publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout CLI repository (this one)
+        uses: actions/checkout@v4
+        with:
+          path: cli
+
+      - name: Setup Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            libglib2.0-dev \
-            libssl-dev \
-            libpq-dev \
-            libssh2-1-dev \
-            libavcodec-dev \
-            libavformat-dev \
-            libavutil-dev \
-            libswscale-dev \
-            libavfilter-dev \
-            libavdevice-dev \
-            libswresample-dev \
-            libwayland-dev \
-            libxkbcommon-dev \
-            libpipewire-0.3-dev \
-            libdbus-1-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            libx11-dev \
-            libxrandr-dev \
-            libxtst-dev \
-            libasound2-dev
+            build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
+            libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libx11-dev libxrandr-dev libxtst-dev libasound2-dev
 
       - name: Set Environment from Tag and API
         run: |
           echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-          echo "Fetching latest core version..."
-          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
+          CORE_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
           if [ -z "$CORE_TAG" ] || [ "$CORE_TAG" == "null" ]; then
             echo "Error: Failed to fetch latest core tag from GitHub API."
             exit 1
@@ -52,12 +40,52 @@ jobs:
           echo "CORE_VER=${CORE_TAG#v}" >> $GITHUB_ENV
           echo "Using Core version: ${CORE_TAG#v}"
 
-      - name: Generate PKGBUILD
+      - name: Download and Extract Core release tarball
+        run: |
+          mkdir -p core
+          TARBALL_URL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Wayclip/core/releases/latest" | \
+            jq -r '.assets[] | select(.name == "wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+          if [ -z "$TARBALL_URL" ]; then
+            echo "Error: Could not find tarball wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz in latest release."
+            exit 1
+          fi
+          curl -s -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$TARBALL_URL" | \
+            tar -xzf - -C core
+          echo "Extracted core tarball:"
+          ls -lR core
+
+      - name: Build CLI binary
+        run: |
+          echo "Building CLI binary..."
+          cd cli
+          cargo build --release
+          cd ..
+
+      - name: Prepare artifacts for release and upload
+        run: |
+          mkdir -p release_binaries
+          cp core/wayclip-${{ env.CORE_VER }}/target/release/daemon release_binaries/
+          cp core/wayclip-${{ env.CORE_VER }}/target/release/trigger release_binaries/
+          cp cli/target/release/wayclip_cli release_binaries/
+          echo "Binaries collected:"
+          ls -l release_binaries
+          for bin in release_binaries/daemon release_binaries/trigger release_binaries/wayclip_cli; do
+            [ -f "$bin" ] || { echo "Error: $bin not found"; exit 1; }
+          done
+
+      - name: Upload binaries for release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: release_binaries/
+
+      - name: Generate PKGBUILD for AUR
         run: |
           cat <<EOF > PKGBUILD
           # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
-          pkgver=${PKG_VER}
+          pkgver=${{ env.PKG_VER }}
           pkgrel=1
           pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
           arch=('x86_64')
@@ -69,80 +97,37 @@ jobs:
           conflicts=('wayclip-cli')
 
           source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\$pkgver.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/archive/refs/tags/v${CORE_VER}.tar.gz"
-                  "wayclip-daemon.service")
-
-          sha256sums=('SKIP'
-                      'SKIP'
-                      'SKIP')
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
 
           prepare() {
             tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
             tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
 
-            local core_dir="core-${CORE_VER}"
-            local cli_dir="cli-\$pkgver"
-
-            cd "\$srcdir/\$core_dir"
-            cargo update
+            cd "\$srcdir/cli-\$pkgver"
             cargo fetch
-
-            cd "\$srcdir/\$cli_dir"
-            cargo update
           }
 
           build() {
-            local core_dir="core-${CORE_VER}"
-            local cli_dir="cli-\$pkgver"
-
-            export CFLAGS+=" -ffat-lto-objects"
-            export CXXFLAGS+=" -ffat-lto-objects"
             export RUSTUP_TOOLCHAIN=stable
 
-            cd "\$srcdir/\$core_dir"
+            cd "\$srcdir/cli-\$pkgver"
             cargo build --release --frozen
-            mv target/release/daemon "\$srcdir/daemon"
-            mv target/release/trigger "\$srcdir/trigger"
-
-            cd "\$srcdir/\$cli_dir"
-            cargo build --release --frozen
-            mv target/release/wayclip_cli "\$srcdir/wayclip-cli"
-          }
-
-          check() {
-            local cli_dir="cli-\$pkgver"
-            cd "\$srcdir/\$cli_dir"
-            cargo test --frozen
           }
 
           package() {
-            install -Dm755 "\$srcdir/wayclip-cli" "\$pkgdir/usr/bin/wayclip-cli"
-            install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
-            install -Dm644 "\$srcdir/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+            install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
+            install -Dm755 "\$srcdir/wayclip-${{ env.CORE_VER }}/target/release/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "\$srcdir/wayclip-${{ env.CORE_VER }}/target/release/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
+            install -Dm644 "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
 
-      - name: Build binaries
-        run: |
-          cargo build --release
-          mkdir -p release_binaries
-          cp target/release/wayclip_cli release_binaries/wayclip-cli
-          cp target/release/daemon release_binaries/wayclip-daemon
-          cp target/release/trigger release_binaries/wayclip-trigger
-
-      - name: Upload binaries for release job
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-binaries
-          path: release_binaries/
-
-      - name: Update PKGBUILD and push to AUR
+      - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgbuild: ./PKGBUILD
           pkgname: "wayclip-cli"
-          assets: "assets/wayclip-daemon.service"
+          assets: "cli/assets/wayclip-daemon.service"
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
@@ -151,34 +136,35 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: publish
+    needs: build_and_publish
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          path: cli
 
-      - name: Download binaries
+      - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
           name: release-binaries
           path: release_binaries
 
       - name: Set Environment from Tag
-        run: |
-          echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
-          cp release_binaries/wayclip-cli AppDir/usr/bin/
-          cp release_binaries/wayclip-daemon AppDir/usr/bin/
-          cp release_binaries/wayclip-trigger AppDir/usr/bin/
-          cp assets/wayclip-cli.desktop AppDir/
-          cp assets/wayclip-cli.png AppDir/
+          cp release_binaries/* AppDir/usr/bin/
+          cp cli/assets/wayclip-cli.desktop AppDir/
+          cp cli/assets/wayclip-cli.png AppDir/
+
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
-          HERE=\`dirname \$0\`
+          HERE=\$(dirname \$0)
           exec \$HERE/usr/bin/wayclip-cli "\$@"
           EOF
+
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
