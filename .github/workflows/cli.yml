@@ -174,6 +174,8 @@ jobs:
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
 
+          chmod +x AppDir/usr/bin/*
+
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
           exec "\$APPDIR/usr/bin/wayclip_cli" "\$@"
