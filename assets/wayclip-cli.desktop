@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Wayclip CLI
+Exec=wayclip-cli
+Icon=wayclip-cli
+Type=Application
+Categories=Utility;

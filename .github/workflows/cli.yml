@@ -1,4 +1,4 @@
-name: Wayclip CLI publish to AUR
+name: Wayclip CLI publish to AUR and Release AppImage
 
 on:
   push:
@@ -15,7 +15,6 @@ jobs:
       - name: Set Environment from Tag and API
         run: |
           echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-
           echo "Fetching latest core version..."
           CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
           if [ -z "$CORE_TAG" ] || [ "$CORE_TAG" == "null" ]; then
@@ -90,22 +89,76 @@ jobs:
 
           package() {
             install -Dm755 "\$srcdir/wayclip-cli" "\$pkgdir/usr/bin/wayclip-cli"
-
             install -Dm755 "\$srcdir/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
             install -Dm755 "\$srcdir/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
-
             install -Dm644 "\$srcdir/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
+
+      - name: Build binaries
+        run: |
+          cargo build --release
+          mkdir -p release_binaries
+          cp target/release/wayclip_cli release_binaries/wayclip-cli
+          cp target/release/daemon release_binaries/wayclip-daemon
+          cp target/release/trigger release_binaries/wayclip-trigger
+
+      - name: Upload binaries for release job
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-binaries
+          path: release_binaries/
 
       - name: Update PKGBUILD and push to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgbuild: ./PKGBUILD
           pkgname: "wayclip-cli"
-          assets: "wayclip-daemon.service"
+          assets: "assets/wayclip-daemon.service"
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to version v${{ env.PKG_VER }}"
           updpkgsums: "true"
+
+  release:
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download binaries
+        uses: actions/download-artifact@v3
+        with:
+          name: release-binaries
+          path: release_binaries
+
+      - name: Set Environment from Tag
+        run: |
+          echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Build AppImage
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp release_binaries/wayclip-cli AppDir/usr/bin/
+          cp release_binaries/wayclip-daemon AppDir/usr/bin/
+          cp release_binaries/wayclip-trigger AppDir/usr/bin/
+          cp assets/wayclip-cli.desktop AppDir/
+          cp assets/wayclip-cli.png AppDir/
+          cat <<EOF > AppDir/AppRun
+          #!/bin/sh
+          HERE=\`dirname \$0\`
+          exec \$HERE/usr/bin/wayclip-cli "\$@"
+          EOF
+          chmod +x AppDir/AppRun
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+
+      - name: Create Release and Upload AppImage
+        uses: softprops/action-gh-release@v1
+        with:
+          files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
