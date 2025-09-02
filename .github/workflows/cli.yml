@@ -105,27 +105,31 @@ jobs:
           provides=('wayclip-cli')
           conflicts=('wayclip-cli')
 
-          source=("\$pkgname-\$pkgver.tar.gz::\${url}/archive/refs/tags/v\$pkgver.tar.gz"
+          source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
 
+          sha256sums=('SKIP'
+                      'SKIP')
+
           prepare() {
-            tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"
-            tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"
-            cd "\$srcdir/cli-\$pkgver"
-            cargo fetch
+            tar -xzf "$srcdir/$pkgname-$pkgver.tar.gz" -C "$srcdir/"
+            tar -xzf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/"
+            cd "$srcdir/cli-$pkgver"
+            cargo fetch --locked
           }
 
           build() {
             export RUSTUP_TOOLCHAIN=stable
-            cd "\$srcdir/cli-\$pkgver"
-            cargo build --release
+            cd "$srcdir/cli-$pkgver"
+            export CARGO_TARGET_DIR="$srcdir/target"
+            cargo build --release --locked
           }
 
           package() {
-            install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"
-            install -Dm755 "\$srcdir/wayclip-binaries/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "\$srcdir/wayclip-binaries/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
-            install -Dm644 "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+            install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+            install -Dm755 "$srcdir/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "$srcdir/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+            install -Dm644 "$srcdir/cli-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
 
@@ -133,14 +137,12 @@ jobs:
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgbuild: ./PKGBUILD
-          pkgname: "wayclip-cli"
-          assets: "cli/assets/wayclip-daemon.service"
+          pkgname: wayclip-cli
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to version v${{ env.PKG_VER }}"
-          updpkgsums: "true"
-          ssh_keyscan_types: "rsa,ecdsa,ed25519"
+          commit_message: Update to version v${{ env.PKG_VER }}
+          ssh_keyscan_types: rsa,ecdsa,ed25519
 
   release:
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -178,7 +180,7 @@ jobs:
 
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
-          exec "\$APPDIR/usr/bin/wayclip_cli" "\$@"
+          exec "$APPDIR/usr/bin/wayclip_cli" "$@"
           EOF
 
           chmod +x AppDir/AppRun
