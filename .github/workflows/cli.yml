@@ -176,8 +176,7 @@ jobs:
 
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
-          HERE=$(dirname $0)
-          exec $HERE/usr/bin/wayclip_cli "$@"
+          exec "\$APPDIR/usr/bin/wayclip_cli" "\$@"
           EOF
 
           chmod +x AppDir/AppRun
