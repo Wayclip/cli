@@ -67,7 +67,7 @@ jobs:
           arch=('x86_64')
           url="https://github.com/wayclip/cli"
           license=('MIT')
-          depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire')
+          depends=('bzip2' 'elfutils' 'gstreamer' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland')
           makedepends=('rust' 'cargo')
           source=("\$pkgname-\$pkgver.tar.gz::\$url/archive/refs/tags/v\$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
@@ -172,3 +172,17 @@ jobs:
           files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup-on-failure:
+    runs-on: ubuntu-22.04
+    needs: [build, test, deploy]
+    if: failure()
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Delete tag on failure
+        run: |
+          echo "A job has failed. Deleting Git tag ${{ github.ref_name }} to prevent a broken release."
+          git push origin --delete ${{ github.ref_name }}
