@@ -30,7 +30,7 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
             libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
             libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev \
-            libx11-dev libxrandr-dev libxtst-dev libasound2-dev libfuse2 wget
+            libx11-dev libxrandr-dev libxtst-dev libasound2-dev libfuse2 wget libxcb1-dev
 
       - name: Set Environment from Tag and API
         run: |
@@ -67,7 +67,7 @@ jobs:
           arch=('x86_64')
           url="https://github.com/wayclip/cli"
           license=('MIT')
-          depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs')
+          depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs' 'dbus' 'libxcb')
           makedepends=('rust' 'cargo' 'clang')
           source=("\$pkgname-\$pkgver.tar.gz::\$url/archive/refs/tags/v\$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
@@ -129,7 +129,7 @@ jobs:
           docker run --rm -v $PWD:/workspace -w /workspace archlinux:latest bash -c "\
             pacman-key --init && \
             pacman-key --populate archlinux && \
-            pacman -Syu --noconfirm base-devel git sudo clang alsa-lib ffmpeg gst-plugins-base gst-plugins-good gst-plugins-bad postgresql-libs && \
+            pacman -Syu --noconfirm base-devel git sudo clang alsa-lib ffmpeg gst-plugins-base gst-plugins-good gst-plugins-bad postgresql-libs dbus libxcb && \
             useradd -m builder && \
             echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
             chown -R builder:builder /workspace && \
