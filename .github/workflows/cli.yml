@@ -23,6 +23,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          sudo add-apt-repository ppa:pipewire-debian/pipewire-upstream -y
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
