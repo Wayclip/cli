@@ -140,6 +140,9 @@ jobs:
             sudo -u builder makepkg -si --noconfirm \
           "
 
+      - name: Restore Workspace Ownership
+        run: sudo chown -R $(id -u):$(id -g) $PWD
+
       - name: Test AppImage
         run: |
           chmod +x ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
