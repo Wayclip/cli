@@ -7,7 +7,7 @@ on:
 
 jobs:
   build_and_publish:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout CLI repository (this one)
         uses: actions/checkout@v4
@@ -145,7 +145,7 @@ jobs:
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
   release:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     needs: build_and_publish
     permissions:
       contents: write
