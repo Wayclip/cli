@@ -141,7 +141,9 @@ jobs:
           "
 
       - name: Test AppImage
-        run: ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage --version
+        run: |
+          chmod +x ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+          ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage --version
 
   deploy:
     runs-on: ubuntu-22.04
