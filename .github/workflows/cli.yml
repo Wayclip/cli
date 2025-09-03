@@ -26,7 +26,7 @@ jobs:
             build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
             libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libx11-dev libxrandr-dev libxtst-dev libasound2-dev
 
       - name: Set Environment from Tag and API
