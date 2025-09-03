@@ -143,6 +143,11 @@ jobs:
       - name: Restore Workspace Ownership
         run: sudo chown -R $(id -u):$(id -g) $PWD
 
+      - name: Install FUSE for AppImage
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+
       - name: Test AppImage
         run: |
           chmod +x ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
