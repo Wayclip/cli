@@ -124,6 +124,9 @@ jobs:
           name: AppImage
           path: .
 
+      - name: Set Environment from Tag
+        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
       - name: Test PKGBUILD in Arch container
         run: |
           docker run --rm -v $PWD:/workspace -w /workspace archlinux:latest bash -c "\
@@ -154,6 +157,9 @@ jobs:
         with:
           name: AppImage
           path: .
+
+      - name: Set Environment from Tag
+        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
