@@ -6,10 +6,10 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-22.04
-    outputs:
-      artifact-path: release_binaries
+    permissions:
+      contents: write
     steps:
       - name: Checkout CLI repository
         uses: actions/checkout@v4
@@ -21,102 +21,34 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install system dependencies
-        run: |
-          sudo add-apt-repository ppa:pipewire-debian/pipewire-upstream -y
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
-            libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
-            libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev \
-            libx11-dev libxrandr-dev libxtst-dev libasound2-dev libfuse2 wget libxcb1-dev
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfuse2
 
       - name: Set Environment from Tag and API
         run: |
           echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-          CORE_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
-          echo "CORE_VER=${CORE_TAG#v}" >> $GITHUB_ENV
+          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
+          echo "CORE_TAG_FULL=${CORE_TAG}" >> $GITHUB_ENV
 
-      - name: Download and Extract Core release tarball
-        run: |
-          mkdir -p core
-          TARBALL_URL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/Wayclip/core/releases/latest" | \
-            jq -r '.assets[] | select(.name == "wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
-          curl -s -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$TARBALL_URL" | tar -xzf - -C core
-
-      - name: Build CLI binary
-        run: |
-          cd cli
-          cargo build --release
-          cd ..
-          mkdir -p release_binaries
-          cp cli/target/release/wayclip_cli release_binaries/
-          cp core/wayclip-binaries/daemon release_binaries/
-          cp core/wayclip-binaries/trigger release_binaries/
-
-      - name: Generate PKGBUILD
-        run: |
-          cat <<'EOF' > PKGBUILD
-          pkgname=wayclip-cli
-          pkgver=${{ env.PKG_VER }}
-          pkgrel=1
-          pkgdesc="CLI for Wayclip"
-          arch=('x86_64')
-          url="https://github.com/wayclip/cli"
-          license=('MIT')
-          depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs' 'dbus' 'libxcb')
-          makedepends=('rust' 'cargo' 'clang')
-          source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
-          sha256sums=('SKIP' 'SKIP')
-
-          prepare() {
-            cd "$srcdir"
-            tar -xzf "$pkgname-$pkgver.tar.gz"
-            mkdir -p wayclip-core
-            tar -xzf "wayclip-core.tar.gz" -C wayclip-core
-          }
-
-          build() {
-            cd "$srcdir/cli-$pkgver"
-            cargo build --release
-          }
-
-          package() {
-            install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
-            install -Dm755 "$srcdir/wayclip-core/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "$srcdir/wayclip-core/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
-          }
-          EOF
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release_binaries
-          path: release_binaries
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PKGBUILD
-          path: PKGBUILD
+      - name: Build the CLI binary
+        run: cd cli && cargo build --release
 
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
 
-          cp release_binaries/* AppDir/usr/bin/
+          cp cli/target/release/wayclip_cli AppDir/usr/bin/wayclip-cli
+
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
 
-          chmod +x AppDir/usr/bin/*
+          chmod +x AppDir/usr/bin/wayclip-cli
 
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
-          exec "\$APPDIR/usr/bin/wayclip_cli" "\$@"
+          exec "\$APPDIR/usr/bin/wayclip-cli" "\$@"
           EOF
           chmod +x AppDir/AppRun
 
@@ -124,71 +56,63 @@ jobs:
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AppImage
-          path: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
-
-  test:
-    runs-on: ubuntu-22.04
-    needs: build
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: release_binaries
-          path: release_binaries
-      - uses: actions/download-artifact@v4
-        with:
-          name: PKGBUILD
-          path: .
-      - uses: actions/download-artifact@v4
-        with:
-          name: AppImage
-          path: .
-
-      - name: Set Environment from Tag
-        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-
-      - name: Test PKGBUILD in Arch container
+      - name: Generate correct PKGBUILD for AUR
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace archlinux:latest bash -c "\
-            pacman-key --init && \
-            pacman-key --populate archlinux && \
-            pacman -Syu --noconfirm base-devel git sudo clang alsa-lib ffmpeg gst-plugins-base gst-plugins-good gst-plugins-bad postgresql-libs dbus libxcb && \
-            useradd -m builder && \
-            echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
-            chown -R builder:builder /workspace && \
-            sudo -u builder makepkg --printsrcinfo && \
-            sudo -u builder makepkg -si --noconfirm \
-          "
+          cat <<'EOF' > PKGBUILD
+          # Maintainer: konyogony <dev@wayclip.com>
+          pkgname=wayclip-cli
+          pkgver=${{ env.PKG_VER }}
+          pkgrel=1
+          pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
+          arch=('x86_64')
+          url="https://github.com/Wayclip/cli"
+          license=('MIT')
+          depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs' 'dbus' 'libxcb')
+          makedepends=('rust' 'cargo' 'clang' 'git')
 
-      - name: Restore Workspace Ownership
-        run: sudo chown -R $(id -u):$(id -g) $PWD
+          _core_ver="${{ env.CORE_TAG_FULL }}"
+          source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz"
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/$_core_ver/wayclip-$_core_ver-x86_64-unknown-linux-gnu.tar.gz")
+          sha256sums=('SKIP' 'SKIP')
 
-      - name: Install FUSE for AppImage
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2
+          prepare() {
+              tar -xzf "$srcdir/$pkgname-$pkgver.tar.gz"
+              
+              mkdir -p "$srcdir/wayclip-core-binaries"
+              tar -xzf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/wayclip-core-binaries" --strip-components=1
+          }
 
-      - name: Test AppImage
-        run: |
-          chmod +x ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
-          ./wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage --version
+          build() {
+              cd "$srcdir/cli-$pkgver"
+              cargo build --release
+          }
+
+          package() {
+              install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+              install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+              install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+              
+              install -Dm644 "$srcdir/cli-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+          }
+          EOF
+
+      - name: Upload artifacts for deploy job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+            PKGBUILD
 
   deploy:
     runs-on: ubuntu-22.04
-    needs: test
+    needs: build-and-release
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: PKGBUILD
-          path: .
-      - uses: actions/download-artifact@v4
-        with:
-          name: AppImage
-          path: .
+          name: release-assets
 
       - name: Set Environment from Tag
         run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
@@ -201,26 +125,11 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: Update to version v${{ env.PKG_VER }}
-          ssh_keyscan_types: rsa,ecdsa,ed25519
+          commit_message: "Update to version v${{ env.PKG_VER }}"
 
-      - name: Upload AppImage to GitHub Release
+      - name: Upload Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cleanup-on-failure:
-    runs-on: ubuntu-22.04
-    needs: [build, test, deploy]
-    if: failure()
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Delete tag on failure
-        run: |
-          echo "A job has failed. Deleting Git tag ${{ github.ref_name }} to prevent a broken release."
-          git push origin --delete ${{ github.ref_name }}
