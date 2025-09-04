@@ -23,11 +23,12 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          sudo add-apt-repository ppa:pipewire-debian/pipewire-upstream -y
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
-            libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
+            libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev libspa-0.2-dev \
             libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libx11-dev libasound2-dev libfuse2 wget
 
@@ -45,10 +46,8 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
 
-          # Copy ONLY the CLI binary, renaming it for consistency
           cp cli/target/release/wayclip_cli AppDir/usr/bin/wayclip-cli
 
-          # Copy assets FROM THIS REPO
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
@@ -139,6 +138,6 @@ jobs:
       - name: Upload Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+          files: wayclip-cli-${{ env.PKG_VER }}_x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
