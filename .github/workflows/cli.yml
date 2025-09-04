@@ -21,8 +21,15 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfuse2
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libglib2.0-dev libssl-dev libpq-dev libssh2-1-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
+            libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev \
+            libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libx11-dev libasound2-dev libfuse2 wget
 
       - name: Set Environment from Tag and API
         run: |
@@ -38,8 +45,10 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
 
+          # Copy ONLY the CLI binary, renaming it for consistency
           cp cli/target/release/wayclip_cli AppDir/usr/bin/wayclip-cli
 
+          # Copy assets FROM THIS REPO
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
@@ -67,7 +76,7 @@ jobs:
           arch=('x86_64')
           url="https://github.com/Wayclip/cli"
           license=('MIT')
-          depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs' 'dbus' 'libxcb')
+          depends=('pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'dbus' 'libxcb')
           makedepends=('rust' 'cargo' 'clang' 'git')
 
           _core_ver="${{ env.CORE_TAG_FULL }}"
@@ -76,23 +85,23 @@ jobs:
           sha256sums=('SKIP' 'SKIP')
 
           prepare() {
-              tar -xzf "$srcdir/$pkgname-$pkgver.tar.gz"
+              tar -xzf "$srcdir/$pkgname-$pkgver.tar.gz" -C "$srcdir" --strip-components=1
               
               mkdir -p "$srcdir/wayclip-core-binaries"
               tar -xzf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/wayclip-core-binaries" --strip-components=1
           }
 
           build() {
-              cd "$srcdir/cli-$pkgver"
+              cd "$srcdir"
               cargo build --release
           }
 
           package() {
-              install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+              install -Dm755 "$srcdir/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
               install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
               install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
               
-              install -Dm644 "$srcdir/cli-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+              install -Dm644 "$srcdir/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
 
