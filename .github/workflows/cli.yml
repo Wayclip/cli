@@ -59,7 +59,7 @@ jobs:
 
       - name: Generate PKGBUILD
         run: |
-          cat <<EOF > PKGBUILD
+          cat <<'EOF' > PKGBUILD
           pkgname=wayclip-cli
           pkgver=${{ env.PKG_VER }}
           pkgrel=1
@@ -69,12 +69,27 @@ jobs:
           license=('MIT')
           depends=('bzip2' 'elfutils' 'glib2' 'libffi' 'libunwind' 'openssl' 'pcre2' 'util-linux-libs' 'xz' 'zlib' 'zstd' 'pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-plugins-bad' 'postgresql-libs' 'dbus' 'libxcb')
           makedepends=('rust' 'cargo' 'clang')
-          source=("\$pkgname-\$pkgver.tar.gz::\$url/archive/refs/tags/v\$pkgver.tar.gz"
+          source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/v${{ env.CORE_VER }}/wayclip-v${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz")
           sha256sums=('SKIP' 'SKIP')
-          prepare() { tar -xzf "\$srcdir/\$pkgname-\$pkgver.tar.gz" -C "\$srcdir/"; tar -xzf "\$srcdir/wayclip-core.tar.gz" -C "\$srcdir/"; }
-          build() { cd "\$srcdir/cli-\$pkgver"; cargo build --release; }
-          package() { install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip_cli" "\$pkgdir/usr/bin/wayclip-cli"; install -Dm755 "\$srcdir/wayclip-binaries/daemon" "\$pkgdir/usr/bin/wayclip-daemon"; install -Dm755 "\$srcdir/wayclip-binaries/trigger" "\$pkgdir/usr/bin/wayclip-trigger"; }
+
+          prepare() {
+            cd "$srcdir"
+            tar -xzf "$pkgname-$pkgver.tar.gz"
+            mkdir -p wayclip-core
+            tar -xzf "wayclip-core.tar.gz" -C wayclip-core
+          }
+
+          build() {
+            cd "$srcdir/cli-$pkgver"
+            cargo build --release
+          }
+
+          package() {
+            install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+            install -Dm755 "$srcdir/wayclip-core/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "$srcdir/wayclip-core/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+          }
           EOF
 
       - name: Upload artifacts
@@ -90,18 +105,25 @@ jobs:
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/lib/systemd/user
+
           cp release_binaries/* AppDir/usr/bin/
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
+          cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
+
           chmod +x AppDir/usr/bin/*
+
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
           exec "\$APPDIR/usr/bin/wayclip_cli" "\$@"
           EOF
           chmod +x AppDir/AppRun
+
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+
       - uses: actions/upload-artifact@v4
         with:
           name: AppImage
