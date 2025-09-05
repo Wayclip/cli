@@ -30,7 +30,7 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libswresample-dev \
             libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev libspa-0.2-dev \
             libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            libx11-dev libasound2-dev libfuse2 wget
+            libx11-dev libasound2-dev libfuse2 wget jq
 
       - name: Set Environment from Tag and API
         run: |
@@ -97,8 +97,9 @@ jobs:
 
           package() {
               install -Dm755 "$srcdir/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
-              install -Dm755 "$srcdir/wayclip-core-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
-              install -Dm755 "$srcdir/wayclip-core-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+              
+              install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+              install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
               
               install -Dm644 "$srcdir/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
@@ -138,6 +139,6 @@ jobs:
       - name: Upload Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: wayclip-cli-${{ env.PKG_VER }}_x86_64.AppImage
+          files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
