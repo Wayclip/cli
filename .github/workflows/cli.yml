@@ -46,7 +46,7 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
 
-          cp cli/target/release/wayclip_cli AppDir/usr/bin/wayclip-cli
+          cp cli/target/release/wayclip-cli AppDir/usr/bin/wayclip-cli
 
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
@@ -96,7 +96,7 @@ jobs:
           }
 
           package() {
-              install -Dm755 "$srcdir/target/release/wayclip_cli" "$pkgdir/usr/bin/wayclip-cli"
+              install -Dm755 "$srcdir/target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
               
               install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
               install -Dm755 "$srcdir/wayclip-core-binaries/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"

@@ -2,6 +2,7 @@ use crate::auth::{handle_login, handle_logout};
 use crate::list::handle_list;
 use crate::manage::handle_manage;
 use anyhow::{Context, Result, bail};
+use arboard::Clipboard;
 use clap::{Parser, Subcommand};
 use colored::*;
 use inquire::{Confirm, Select, Text};
@@ -12,8 +13,9 @@ use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
     Collect, PullClipsArgs, WAYCLIP_TRIGGER_PATH, api, delete_file, gather_clip_data,
-    rename_all_entries, settings::Settings,
+    gather_unified_clips, rename_all_entries, update_liked,
 };
+use wayclip_core::{models::UnifiedClipData, settings::Settings};
 
 pub mod auth;
 pub mod list;
@@ -21,15 +23,15 @@ pub mod manage;
 
 #[derive(Parser)]
 #[command(
-    name = "wayclip",
+    name = "wayclip-cli",
     version,
-    about = "An instant clipping tool with cloud sync, built on PipeWire and GStreamer."
+    about = "Capture and replay your screen instantly on Linux. Built for the modern desktop with Wayland and PipeWire."
 )]
 struct Cli {
-    #[arg(short, long)]
-    debug: bool,
     #[command(subcommand)]
     command: Commands,
+    #[arg(long, hide = true)]
+    debug: bool,
 }
 
 #[derive(Subcommand)]
@@ -81,6 +83,18 @@ pub enum Commands {
         #[arg(help = "Name of the clip to share")]
         name: String,
     },
+    Like {
+        #[arg(help = "Name of the local clip to like/unlike")]
+        name: String,
+    },
+    Url {
+        #[arg(help = "Name of the hosted clip to get the URL for")]
+        name: String,
+    },
+    Open {
+        #[arg(help = "Name of the hosted clip to open in a browser")]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -91,10 +105,28 @@ pub enum DaemonCommand {
     Status,
 }
 
+/// A robust, synchronous function to copy text to the system clipboard.
+/// This works for both Wayland and X11, provided the correct backend tools are installed.
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    // With the `wayland-data-control` feature, arboard communicates directly
+    // with the Wayland compositor, which is much more reliable than spawning `wl-copy`.
+    let mut clipboard = Clipboard::new().context(
+        "Failed to initialize clipboard.\n\
+         - On Wayland, this can happen if the compositor is missing necessary protocols.\n\
+         - As a fallback, ensure 'wl-clipboard' (Wayland) or 'xclip' (X11) is installed.",
+    )?;
+    clipboard
+        .set_text(text.to_string())
+        .context("Failed to write text to clipboard")?;
+    // The `thread::sleep` hack is no longer needed with this direct communication method.
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     if let Err(e) = run().await {
-        eprintln!("{} {}", "Error:".red().bold(), e);
+        // The `{:#}` formatter respects newlines in error messages, providing better context.
+        eprintln!("{} {:#}", "Error:".red().bold(), e);
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
@@ -124,6 +156,9 @@ async fn run() -> Result<()> {
             end_time,
             disable_audio,
         } => handle_edit(name, start_time, end_time, disable_audio).await?,
+        Commands::Like { name } => handle_like(name).await?,
+        Commands::Url { name } => handle_url(name).await?,
+        Commands::Open { name } => handle_open(name).await?,
         Commands::Daemon { action } => {
             let manager = DaemonManager::new();
             match action {
@@ -137,6 +172,80 @@ async fn run() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn find_unified_clip(name: &str) -> Result<UnifiedClipData> {
+    let name_stem = Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+
+    let all_clips = gather_unified_clips().await?;
+    all_clips
+        .into_iter()
+        .find(|clip| clip.name == name_stem)
+        .context(format!("Clip '{name_stem}' not found."))
+}
+
+async fn handle_like(name: &str) -> Result<()> {
+    let clip = find_unified_clip(name).await?;
+
+    if let (Some(local_data), Some(_)) = (&clip.local_data, &clip.local_path) {
+        let new_liked_status = !local_data.liked;
+        match update_liked(&clip.full_filename, new_liked_status).await {
+            Ok(_) => {
+                let status = if new_liked_status { "Liked" } else { "Unliked" };
+                println!("✔ Clip '{}' has been {}.", clip.name.cyan(), status.green());
+            }
+            Err(e) => bail!("Failed to update liked status: {}", e),
+        }
+    } else {
+        bail!(
+            "Clip '{}' does not exist locally and cannot be liked/unliked.",
+            clip.name
+        );
+    }
+    Ok(())
+}
+
+async fn handle_url(name: &str) -> Result<()> {
+    let clip = find_unified_clip(name).await?;
+    let settings = Settings::load().await?;
+
+    if let Some(id) = clip.hosted_id {
+        let public_url = format!("{}/clip/{}", settings.api_url, id);
+        println!("  {}", public_url.underline());
+        match copy_to_clipboard(&public_url) {
+            Ok(_) => println!("{}", "✔ Public URL copied to clipboard!".green()),
+            Err(e) => println!(
+                "{}",
+                format!("✗ Could not copy URL to clipboard: {:#}", e).yellow()
+            ),
+        }
+    } else {
+        bail!(
+            "'{}' is not a hosted clip and does not have a public URL.",
+            clip.name
+        );
+    }
+    Ok(())
+}
+
+async fn handle_open(name: &str) -> Result<()> {
+    let clip = find_unified_clip(name).await?;
+    let settings = Settings::load().await?;
+
+    if let Some(id) = clip.hosted_id {
+        let public_url = format!("{}/clip/{}", settings.api_url, id);
+        println!("○ Opening URL in browser: {}", public_url.cyan());
+        opener::open(&public_url).context("Failed to open URL in browser.")?;
+    } else {
+        bail!(
+            "'{}' is not a hosted clip and does not have a public URL.",
+            clip.name
+        );
+    }
     Ok(())
 }
 
@@ -181,22 +290,24 @@ async fn handle_me() -> Result<()> {
 async fn handle_share(clip_name: &str) -> Result<()> {
     println!("{}", "○ Preparing to share...".cyan());
 
-    let profile = api::get_current_user()
+    let _ = api::get_current_user()
         .await
         .context("Could not get user profile. Are you logged in?")?;
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
 
-    let clip_path = if clip_name.ends_with(".mp4") {
-        clips_path.join(clip_name)
+    let clip_filename = if clip_name.ends_with(".mp4") {
+        clip_name.to_string()
     } else {
-        clips_path.join(format!("{clip_name}.mp4"))
+        format!("{clip_name}.mp4")
     };
+    let clip_path = clips_path.join(&clip_filename);
 
     if !clip_path.exists() {
         bail!("Clip '{}' not found locally.", clip_name);
     }
 
+    let profile = api::get_current_user().await?;
     let file_size = tokio::fs::metadata(&clip_path).await?.len() as i64;
     let available_storage = profile.storage_limit - profile.storage_used;
 
@@ -218,6 +329,16 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         Ok(url) => {
             println!("{}", "✔ Clip shared successfully!".green().bold());
             println!("  Public URL: {}", url.underline());
+
+            match copy_to_clipboard(&url) {
+                Ok(_) => println!("{}", "✔ URL automatically copied to clipboard!".green()),
+                Err(e) => {
+                    println!(
+                        "{}",
+                        format!("✗ Could not copy URL to clipboard: {:#}", e).yellow()
+                    )
+                }
+            }
         }
         Err(api::ApiClientError::Unauthorized) => {
             bail!("You must be logged in to share clips. Please run `wayclip login`.");
@@ -276,9 +397,23 @@ async fn handle_config(editor: Option<&str>) -> Result<()> {
 async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
-    let clip_file = clips_path.join(name);
+    let clip_filename = if name.ends_with(".mp4") {
+        name.to_string()
+    } else {
+        format!("{name}.mp4")
+    };
+    let clip_file = clips_path.join(&clip_filename);
+
+    if !clip_file.exists() {
+        bail!("Clip '{}' not found locally.", clip_filename);
+    }
+
     let player_name = player.unwrap_or("mpv");
-    println!("⏵ Launching '{}' with {}...", name.cyan(), player_name);
+    println!(
+        "⏵ Launching '{}' with {}...",
+        clip_filename.cyan(),
+        player_name
+    );
     let mut parts = player_name.split_whitespace();
     let mut command = Command::new(parts.next().unwrap_or("mpv"));
     command.args(parts);
@@ -292,18 +427,25 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
 }
 
 async fn handle_rename(name: &str) -> Result<()> {
+    let name_stem = Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+
     let clips = gather_clip_data(
         Collect::All,
         PullClipsArgs {
             page: 1,
             page_size: 999,
-            search_query: Some(name.to_string()),
+            search_query: Some(name_stem.to_string()),
         },
     )
     .await?
     .clips;
 
-    let clip_to_rename = clips.first().context(format!("Clip '{name}' not found."))?;
+    let clip_to_rename = clips
+        .first()
+        .context(format!("Clip '{name_stem}' not found."))?;
 
     let new_name_stem = Text::new("Enter new name (without extension):")
         .with_initial_value(&clip_to_rename.name)
@@ -328,18 +470,25 @@ async fn handle_rename(name: &str) -> Result<()> {
 }
 
 async fn handle_delete(name: &str) -> Result<()> {
+    let name_stem = Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+
     let clips = gather_clip_data(
         Collect::All,
         PullClipsArgs {
             page: 1,
             page_size: 999,
-            search_query: Some(name.to_string()),
+            search_query: Some(name_stem.to_string()),
         },
     )
     .await?
     .clips;
 
-    let clip_to_delete = clips.first().context(format!("Clip '{name}' not found."))?;
+    let clip_to_delete = clips
+        .first()
+        .context(format!("Clip '{name_stem}' not found."))?;
 
     let hosted_clips = api::get_hosted_clips_index().await.unwrap_or_default();
     let clip_filename = Path::new(&clip_to_delete.path)
@@ -389,11 +538,13 @@ async fn handle_edit(
 
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
-    let clip_path = if name.ends_with(".mp4") {
-        clips_path.join(name)
+
+    let clip_filename = if name.ends_with(".mp4") {
+        name.to_string()
     } else {
-        clips_path.join(format!("{name}.mp4"))
+        format!("{name}.mp4")
     };
+    let clip_path = clips_path.join(&clip_filename);
 
     if !clip_path.exists() {
         bail!("Clip '{}' not found locally.", name);

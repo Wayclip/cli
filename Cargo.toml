@@ -1,10 +1,10 @@
 [package]
-name = "wayclip_cli"
+name = "wayclip-cli"
 version = "0.1.37"
 edition = "2024"
 
 [[bin]]
-name = "wayclip_cli"
+name = "wayclip-cli"
 path = "src/main.rs"
 
 [dependencies]

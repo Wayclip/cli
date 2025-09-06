@@ -220,9 +220,19 @@ pub async fn handle_manage() -> Result<()> {
             "☐ Copy URL" => {
                 if let Some(id) = selected_clip.hosted_id {
                     let public_url = format!("{}/clip/{}", settings.api_url, id);
-                    clipboard.set_text(public_url)?;
-                    thread::sleep(Duration::from_millis(100));
-                    println!("{}", "✔ Public URL copied to clipboard!".green());
+                    println!("  Public URL: {}", public_url.underline());
+                    match clipboard.set_text(&public_url) {
+                        Ok(_) => {
+                            thread::sleep(Duration::from_millis(100));
+                            println!("{}", "✔ Public URL copied to clipboard!".green());
+                        }
+                        Err(e) => {
+                            println!(
+                                "{}",
+                                format!("✗ Failed to copy URL to clipboard: {e}").red()
+                            );
+                        }
+                    }
                 }
             }
             "⌫ Delete Server Copy" => {
