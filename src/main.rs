@@ -12,8 +12,8 @@ use std::process::ExitCode;
 use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
-    Collect, PullClipsArgs, WAYCLIP_TRIGGER_PATH, api, delete_file, gather_clip_data,
-    gather_unified_clips, rename_all_entries, update_liked,
+    Collect, PullClipsArgs, api, delete_file, gather_clip_data, gather_unified_clips,
+    rename_all_entries, update_liked,
 };
 use wayclip_core::{models::UnifiedClipData, settings::Settings};
 
@@ -105,11 +105,7 @@ pub enum DaemonCommand {
     Status,
 }
 
-/// A robust, synchronous function to copy text to the system clipboard.
-/// This works for both Wayland and X11, provided the correct backend tools are installed.
 fn copy_to_clipboard(text: &str) -> Result<()> {
-    // With the `wayland-data-control` feature, arboard communicates directly
-    // with the Wayland compositor, which is much more reliable than spawning `wl-copy`.
     let mut clipboard = Clipboard::new().context(
         "Failed to initialize clipboard.\n\
          - On Wayland, this can happen if the compositor is missing necessary protocols.\n\
@@ -118,14 +114,12 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
     clipboard
         .set_text(text.to_string())
         .context("Failed to write text to clipboard")?;
-    // The `thread::sleep` hack is no longer needed with this direct communication method.
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     if let Err(e) = run().await {
-        // The `{:#}` formatter respects newlines in error messages, providing better context.
         eprintln!("{} {:#}", "Error:".red().bold(), e);
         return ExitCode::FAILURE;
     }
@@ -335,7 +329,7 @@ async fn handle_share(clip_name: &str) -> Result<()> {
                 Err(e) => {
                     println!(
                         "{}",
-                        format!("✗ Could not copy URL to clipboard: {:#}", e).yellow()
+                        format!("✗ Could not copy URL to clipboard: {e:#}").yellow()
                     )
                 }
             }
@@ -351,7 +345,8 @@ async fn handle_share(clip_name: &str) -> Result<()> {
 }
 
 async fn handle_save() -> Result<()> {
-    let mut trigger_command = Command::new(WAYCLIP_TRIGGER_PATH);
+    let settings = Settings::load().await?;
+    let mut trigger_command = Command::new(settings.trigger_path);
     let status = trigger_command
         .status()
         .await
