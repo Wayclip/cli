@@ -119,7 +119,7 @@ jobs:
 
             install -Dm755 "target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
 
-            core_bin_dir="$srcdir/wayclip-core"
+            core_bin_dir="$srcdir/wayclip-core/wayclip-binaries"
             echo ">>> [package] checking for core binaries inside $core_bin_dir"
             ls -lR "$core_bin_dir" || true
 
@@ -129,13 +129,7 @@ jobs:
                 echo ">>> [package] found $n directly"
                 install -Dm755 "$core_bin_dir/$n" "$pkgdir/usr/bin/wayclip-$n"
               else
-                found=$(find "$srcdir/wayclip-core" -type f -name "$n" -perm -111 2>/dev/null | head -n1)
-                if [ -n "$found" ]; then
-                  echo ">>> [package] found $n at $found"
-                  install -Dm755 "$found" "$pkgdir/usr/bin/wayclip-$n"
-                else
-                  echo ">>> [package] ERROR: did not find $n!"
-                fi
+                echo ">>> [package] ERROR: did not find $n!"
               fi
             done
 
