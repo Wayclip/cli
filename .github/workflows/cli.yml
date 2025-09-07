@@ -41,6 +41,12 @@ jobs:
       - name: Build the CLI binary
         run: cd cli && cargo build --release
 
+      - name: Prepare Release Assets
+        run: |
+          mkdir release_assets
+          cp cli/target/release/wayclip-cli release_assets/wayclip-cli-x86_64-unknown-linux-gnu
+          cp cli/assets/wayclip-daemon.service release_assets/
+
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
@@ -57,7 +63,8 @@ jobs:
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir
+          mv Wayclip_CLI-x86_64.AppImage release_assets/wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
 
       - name: Generate correct PKGBUILD for AUR
         run: |
@@ -97,6 +104,7 @@ jobs:
               install -Dm644 "$srcdir/$pkgname-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
+          mv PKGBUILD release_assets/
 
       - name: Upload artifacts for deploy job
         uses: actions/upload-artifact@v4
@@ -132,6 +140,9 @@ jobs:
       - name: Upload Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+          files: |
+            wayclip-cli-*.AppImage
+            wayclip-cli-x86_64-unknown-linux-gnu
+            wayclip-daemon.service
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
