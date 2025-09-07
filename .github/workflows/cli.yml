@@ -56,7 +56,7 @@ jobs:
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
           chmod +x AppDir/usr/bin/wayclip-cli
-          cat <<EOF > AppDir/AppRun
+          cat <<'EOF' > AppDir/AppRun
           #!/bin/sh
           exec "\$APPDIR/usr/bin/wayclip-cli" "\$@"
           EOF
@@ -68,10 +68,10 @@ jobs:
 
       - name: Generate correct PKGBUILD for AUR
         run: |
-          cat <<'EOF' > PKGBUILD
+          cat <<'PKG' > PKGBUILD.in
           # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
-          pkgver=${PKG_VER}
+          pkgver=@PKG_VER@
           pkgrel=1
           pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
           arch=('x86_64')
@@ -79,14 +79,14 @@ jobs:
           license=('MIT')
           depends=('pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'dbus' 'libxcb')
           makedepends=('rust' 'cargo' 'clang' 'git')
-          _core_ver="${CORE_TAG_FULL}"
+          _core_ver="@CORE_TAG@"
           source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz"
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/${_core_ver}/wayclip-${_core_ver}-x86_64-unknown-linux-gnu.tar.gz")
           sha256sums=('SKIP' 'SKIP')
 
           prepare() {
             echo ">>> [prepare] contents of \$srcdir before anything:"
-            ls -l "$srcdir"
+            ls -l "$srcdir" || true
 
             if [ -d "$srcdir/cli-$pkgver" ]; then
               mv "$srcdir/cli-$pkgver" "$srcdir/$pkgname-$pkgver"
@@ -100,13 +100,13 @@ jobs:
               bsdtar -xvf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/wayclip-core"
             else
               echo ">>> [prepare] looking for fallback core archive..."
-              core_archive=$(ls "$srcdir"/wayclip-*-x86_64-unknown-linux-gnu.tar.gz 2>/dev/null | head -n1 || true)
-              echo ">>> [prepare] found fallback core archive: $core_archive"
-              [ -n "$core_archive" ] && bsdtar -xvf "$core_archive" -C "$srcdir/wayclip-core"
+              core_archive=\$(ls "$srcdir"/wayclip-*-x86_64-unknown-linux-gnu.tar.gz 2>/dev/null | head -n1 || true)
+              echo ">>> [prepare] found fallback core archive: \$core_archive"
+              [ -n "\$core_archive" ] && bsdtar -xvf "\$core_archive" -C "$srcdir/wayclip-core"
             fi
 
             echo ">>> [prepare] contents of wayclip-core after extraction:"
-            ls -lR "$srcdir/wayclip-core"
+            ls -lR "$srcdir/wayclip-core" || true
           }
 
           build() {
@@ -129,10 +129,10 @@ jobs:
                 echo ">>> [package] found $n directly"
                 install -Dm755 "$core_bin_dir/$n" "$pkgdir/usr/bin/wayclip-$n"
               else
-                found=$(find "$srcdir/wayclip-core" -type f -name "$n" -perm -111 2>/dev/null | head -n1 || true)
-                if [ -n "$found" ]; then
-                  echo ">>> [package] found $n at $found"
-                  install -Dm755 "$found" "$pkgdir/usr/bin/wayclip-$n"
+                found=\$(find "$srcdir/wayclip-core" -type f -name "$n" -perm -111 2>/dev/null | head -n1 || true)
+                if [ -n "\$found" ]; then
+                  echo ">>> [package] found $n at \$found"
+                  install -Dm755 "\$found" "$pkgdir/usr/bin/wayclip-$n"
                 else
                   echo ">>> [package] ERROR: did not find $n!"
                 fi
@@ -144,7 +144,11 @@ jobs:
               install -Dm644 "assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
             fi
           }
-          EOF
+          PKG
+
+          sed -e "s|@PKG_VER@|${PKG_VER}|g" -e "s|@CORE_TAG@|${CORE_TAG_FULL}|g" PKGBUILD.in > PKGBUILD
+          rm PKGBUILD.in
+
           mv PKGBUILD release_assets/
 
       - name: Upload artifacts for deploy job
