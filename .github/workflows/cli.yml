@@ -58,7 +58,7 @@ jobs:
           chmod +x AppDir/usr/bin/wayclip-cli
           cat <<'EOF' > AppDir/AppRun
           #!/bin/sh
-          exec "\$APPDIR/usr/bin/wayclip-cli" "\$@"
+          exec "$APPDIR/usr/bin/wayclip-cli" "$@"
           EOF
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -100,9 +100,9 @@ jobs:
               bsdtar -xvf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/wayclip-core"
             else
               echo ">>> [prepare] looking for fallback core archive..."
-              core_archive=\$(ls "$srcdir"/wayclip-*-x86_64-unknown-linux-gnu.tar.gz 2>/dev/null | head -n1 || true)
-              echo ">>> [prepare] found fallback core archive: \$core_archive"
-              [ -n "\$core_archive" ] && bsdtar -xvf "\$core_archive" -C "$srcdir/wayclip-core"
+              core_archive=$(ls "$srcdir"/wayclip-*-x86_64-unknown-linux-gnu.tar.gz 2>/dev/null | head -n1)
+              [ -z "$core_archive" ] || bsdtar -xvf "$core_archive" -C "$srcdir/wayclip-core"
+              echo ">>> [prepare] found fallback core archive: $core_archive"
             fi
 
             echo ">>> [prepare] contents of wayclip-core after extraction:"
@@ -129,10 +129,10 @@ jobs:
                 echo ">>> [package] found $n directly"
                 install -Dm755 "$core_bin_dir/$n" "$pkgdir/usr/bin/wayclip-$n"
               else
-                found=\$(find "$srcdir/wayclip-core" -type f -name "$n" -perm -111 2>/dev/null | head -n1 || true)
-                if [ -n "\$found" ]; then
-                  echo ">>> [package] found $n at \$found"
-                  install -Dm755 "\$found" "$pkgdir/usr/bin/wayclip-$n"
+                found=$(find "$srcdir/wayclip-core" -type f -name "$n" -perm -111 2>/dev/null | head -n1)
+                if [ -n "$found" ]; then
+                  echo ">>> [package] found $n at $found"
+                  install -Dm755 "$found" "$pkgdir/usr/bin/wayclip-$n"
                 else
                   echo ">>> [package] ERROR: did not find $n!"
                 fi
