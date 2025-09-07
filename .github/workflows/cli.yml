@@ -110,9 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-assets
-          path: |
-            wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
-            PKGBUILD
+          path: release_assets/
 
   deploy:
     runs-on: ubuntu-22.04
