@@ -45,21 +45,16 @@ jobs:
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
-
           cp cli/target/release/wayclip-cli AppDir/usr/bin/wayclip-cli
-
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
-
           chmod +x AppDir/usr/bin/wayclip-cli
-
           cat <<EOF > AppDir/AppRun
           #!/bin/sh
           exec "\$APPDIR/usr/bin/wayclip-cli" "\$@"
           EOF
           chmod +x AppDir/AppRun
-
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
@@ -83,27 +78,19 @@ jobs:
                   "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/$_core_ver/wayclip-$_core_ver-x86_64-unknown-linux-gnu.tar.gz")
           sha256sums=('SKIP' 'SKIP')
 
-          prepare() {
-              tar -xzf "$srcdir/$pkgname-$pkgver.tar.gz" -C "$srcdir" --strip-components=1
-              
-              mkdir -p "$srcdir/wayclip-core-binaries"
-              tar -xzf "$srcdir/wayclip-core.tar.gz" -C "$srcdir/wayclip-core-binaries" --strip-components=1
-          }
-
           build() {
-              cd "$srcdir"
+              cd "$pkgname-$pkgver"
               cargo build --release
           }
 
           package() {
-              install -Dm755 "$srcdir/target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
+              install -Dm755 "$srcdir/$pkgname-$pkgver/target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
 
-              install -Dm755 "$srcdir/wayclip-core-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
-              install -Dm755 "$srcdir/wayclip-core-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
+              install -Dm755 "$srcdir/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
+              install -Dm755 "$srcdir/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
 
-              sed -i 's|__WAYCLIP_DAEMON_PATH__|/usr/bin/wayclip-daemon|' "$srcdir/assets/wayclip-daemon.service"
-              
-              install -Dm644 "$srcdir/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+              sed -i 's|__WAYCLIP_DAEMON_PATH__|/usr/bin/wayclip-daemon|' "$srcdir/$pkgname-$pkgver/assets/wayclip-daemon.service"
+              install -Dm644 "$srcdir/$pkgname-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
           }
           EOF
 
