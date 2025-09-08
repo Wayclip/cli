@@ -55,8 +55,8 @@ jobs:
         run: |
           mkdir release_assets
           cp cli/target/release/wayclip-cli release_assets/wayclip-cli-x86_64-unknown-linux-gnu
-          cp core-binaries/wayclip-daemon release_assets/
-          cp core-binaries/wayclip-trigger release_assets/
+          cp core-binaries/daemon release_assets/wayclip-daemon
+          cp core-binaries/trigger release_assets/wayclip-trigger
           cp cli/assets/wayclip-daemon.service release_assets/
 
       - name: Build AppImage
@@ -64,8 +64,8 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
           cp cli/target/release/wayclip-cli AppDir/usr/bin/wayclip-cli
-          cp core-binaries/wayclip-daemon AppDir/usr/bin/wayclip-daemon
-          cp core-binaries/wayclip-trigger AppDir/usr/bin/wayclip-trigger
+          cp core-binaries/daemon AppDir/usr/bin/wayclip-daemon
+          cp core-binaries/trigger AppDir/usr/bin/wayclip-trigger
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
