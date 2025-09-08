@@ -37,13 +37,11 @@ jobs:
           echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
           CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
           echo "CORE_TAG_FULL=${CORE_TAG}" >> $GITHUB_ENV
-          CORE_VER=$(echo $CORE_TAG | sed 's/v//')
-          echo "CORE_VER=${CORE_VER}" >> $GITHUB_ENV
 
       - name: Download and Extract Core Binaries
         run: |
           mkdir core-binaries
-          CORE_ASSET_URL="https://github.com/Wayclip/core/releases/download/${{ env.CORE_TAG_FULL }}/wayclip-${{ env.CORE_VER }}-x86_64-unknown-linux-gnu.tar.gz"
+          CORE_ASSET_URL="https://github.com/Wayclip/core/releases/download/${{ env.CORE_TAG_FULL }}/wayclip-${{ env.CORE_TAG_FULL }}-x86_64-unknown-linux-gnu.tar.gz"
           echo "Downloading core binaries from ${CORE_ASSET_URL}"
           wget -q -O core-binaries.tar.gz "${CORE_ASSET_URL}"
           tar -xzf core-binaries.tar.gz -C core-binaries
@@ -96,9 +94,8 @@ jobs:
           depends=('pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'dbus' 'libxcb')
           makedepends=('rust' 'cargo' 'clang' 'git')
           _core_ver="@CORE_TAG@"
-          _core_ver_num_only=$(echo "${_core_ver}" | sed 's/v//')
           source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz"
-                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/${_core_ver}/wayclip-${_core_ver_num_only}-x86_64-unknown-linux-gnu.tar.gz")
+                  "wayclip-core.tar.gz::https://github.com/Wayclip/core/releases/download/${_core_ver}/wayclip-${_core_ver}-x86_64-unknown-linux-gnu.tar.gz")
           sha256sums=('SKIP' 'SKIP')
 
           prepare() {

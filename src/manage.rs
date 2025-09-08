@@ -1,20 +1,16 @@
-use crate::{handle_edit, handle_share, handle_view};
+use crate::{copy_to_clipboard, handle_edit, handle_share, handle_view};
 use anyhow::Result;
-use arboard::Clipboard;
 use chrono::Utc;
 use colored::*;
 use inquire::{Confirm, InquireError, Select, Text};
 use std::collections::HashMap;
 use std::path::Path;
-use std::thread;
-use std::time::Duration;
 use wayclip_core::{
     api, delete_file, gather_unified_clips, models::UnifiedClipData, rename_all_entries,
     update_liked,
 };
 
 pub async fn handle_manage() -> Result<()> {
-    let mut clipboard = Clipboard::new()?;
     let settings = wayclip_core::settings::Settings::load().await?;
 
     'main_loop: loop {
@@ -198,11 +194,15 @@ pub async fn handle_manage() -> Result<()> {
                 }
                 continue 'main_loop;
             }
-            "⎘ Copy Name" => {
-                clipboard.set_text(&selected_clip.name)?;
-                thread::sleep(Duration::from_millis(100));
-                println!("{}", "✔ Name copied to clipboard!".green());
-            }
+            "⎘ Copy Name" => match copy_to_clipboard(&selected_clip.name).await {
+                Ok(_) => println!("{}", "✔ Name copied to clipboard!".green()),
+                Err(e) => {
+                    println!(
+                        "{}",
+                        format!("✗ Failed to copy name to clipboard: {e}").red()
+                    )
+                }
+            },
             "♥ Like" | "♡ Unlike" => {
                 let local_data = selected_clip.local_data.as_ref().unwrap();
                 match update_liked(&selected_clip.full_filename, !local_data.liked).await {
@@ -221,9 +221,8 @@ pub async fn handle_manage() -> Result<()> {
                 if let Some(id) = selected_clip.hosted_id {
                     let public_url = format!("{}/clip/{}", settings.api_url, id);
                     println!("  Public URL: {}", public_url.underline());
-                    match clipboard.set_text(&public_url) {
+                    match copy_to_clipboard(&public_url).await {
                         Ok(_) => {
-                            thread::sleep(Duration::from_millis(100));
                             println!("{}", "✔ Public URL copied to clipboard!".green());
                         }
                         Err(e) => {

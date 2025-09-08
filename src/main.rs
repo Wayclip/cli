@@ -9,6 +9,7 @@ use inquire::{Confirm, Select, Text};
 use std::env;
 use std::path::Path;
 use std::process::ExitCode;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
@@ -105,16 +106,57 @@ pub enum DaemonCommand {
     Status,
 }
 
-fn copy_to_clipboard(text: &str) -> Result<()> {
-    let mut clipboard = Clipboard::new().context(
-        "Failed to initialize clipboard.\n\
-         - On Wayland, this can happen if the compositor is missing necessary protocols.\n\
-         - As a fallback, ensure 'wl-clipboard' (Wayland) or 'xclip' (X11) is installed.",
-    )?;
-    clipboard
-        .set_text(text.to_string())
-        .context("Failed to write text to clipboard")?;
-    Ok(())
+pub async fn copy_to_clipboard(text: &str) -> Result<()> {
+    if env::var("WAYLAND_DISPLAY").is_ok() {
+        if let Ok(mut process) = Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = process.stdin.take() {
+                if stdin.write_all(text.as_bytes()).await.is_ok() {
+                    drop(stdin);
+                    if process.wait().await.is_ok() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    if env::var("DISPLAY").is_ok() {
+        if let Ok(mut process) = Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = process.stdin.take() {
+                if stdin.write_all(text.as_bytes()).await.is_ok() {
+                    drop(stdin);
+                    if process.wait().await.is_ok() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    let text_owned = text.to_string();
+    match tokio::task::spawn_blocking(move || -> Result<(), arboard::Error> {
+        let mut clipboard = Clipboard::new()?;
+        clipboard.set_text(text_owned)
+    })
+    .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => bail!(
+            "Could not access clipboard.\n\
+             - Please install 'wl-clipboard' (Wayland) or 'xclip' (X11).\n\
+             - arboard error: {:#}",
+            e
+        ),
+        Err(e) => bail!("Clipboard task failed: {:#}", e),
+    }
 }
 
 #[tokio::main]
@@ -210,7 +252,7 @@ async fn handle_url(name: &str) -> Result<()> {
     if let Some(id) = clip.hosted_id {
         let public_url = format!("{}/clip/{}", settings.api_url, id);
         println!("  {}", public_url.underline());
-        match copy_to_clipboard(&public_url) {
+        match copy_to_clipboard(&public_url).await {
             Ok(_) => println!("{}", "✔ Public URL copied to clipboard!".green()),
             Err(e) => println!(
                 "{}",
@@ -324,7 +366,7 @@ async fn handle_share(clip_name: &str) -> Result<()> {
             println!("{}", "✔ Clip shared successfully!".green().bold());
             println!("  Public URL: {}", url.underline());
 
-            match copy_to_clipboard(&url) {
+            match copy_to_clipboard(&url).await {
                 Ok(_) => println!("{}", "✔ URL automatically copied to clipboard!".green()),
                 Err(e) => {
                     println!(
