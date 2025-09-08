@@ -46,7 +46,7 @@ jobs:
           wget -q -O core-binaries.tar.gz "${CORE_ASSET_URL}"
           tar -xzf core-binaries.tar.gz -C core-binaries
           echo "Extracted core binaries:"
-          ls -l core-binaries
+          ls -lR core-binaries
 
       - name: Build the CLI binary
         run: cd cli && cargo build --release
@@ -55,8 +55,8 @@ jobs:
         run: |
           mkdir release_assets
           cp cli/target/release/wayclip-cli release_assets/wayclip-cli-x86_64-unknown-linux-gnu
-          cp core-binaries/daemon release_assets/wayclip-daemon
-          cp core-binaries/trigger release_assets/wayclip-trigger
+          cp core-binaries/wayclip-binaries/daemon release_assets/wayclip-daemon
+          cp core-binaries/wayclip-binaries/trigger release_assets/wayclip-trigger
           cp cli/assets/wayclip-daemon.service release_assets/
 
       - name: Build AppImage
@@ -64,8 +64,8 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
           cp cli/target/release/wayclip-cli AppDir/usr/bin/wayclip-cli
-          cp core-binaries/daemon AppDir/usr/bin/wayclip-daemon
-          cp core-binaries/trigger AppDir/usr/bin/wayclip-trigger
+          cp core-binaries/wayclip-binaries/daemon AppDir/usr/bin/wayclip-daemon
+          cp core-binaries/wayclip-binaries/trigger AppDir/usr/bin/wayclip-trigger
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
           cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
@@ -114,7 +114,7 @@ jobs:
           package() {
             cd "$srcdir/$pkgname-$pkgver"
             install -Dm755 "target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
-            core_bin_dir="$srcdir/wayclip-core"
+            core_bin_dir="$srcdir/wayclip-core/wayclip-binaries"
             for n in daemon trigger; do
               if [ -f "$core_bin_dir/$n" ]; then
                 install -Dm755 "$core_bin_dir/$n" "$pkgdir/usr/bin/wayclip-$n"
