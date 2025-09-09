@@ -63,12 +63,12 @@ jobs:
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib/systemd/user
-          cp cli/target/release/wayclip-cli AppDir/usr/bin/wayclip-cli
-          cp core-binaries/wayclip-binaries/daemon AppDir/usr/bin/wayclip-daemon
-          cp core-binaries/wayclip-binaries/trigger AppDir/usr/bin/wayclip-trigger
+          cp release_assets/wayclip-cli-x86_64-unknown-linux-gnu AppDir/usr/bin/wayclip-cli
+          cp release_assets/wayclip-daemon AppDir/usr/bin/wayclip-daemon
+          cp release_assets/wayclip-trigger AppDir/usr/bin/wayclip-trigger
           cp cli/assets/wayclip-cli.desktop AppDir/
           cp cli/assets/wayclip-cli.png AppDir/
-          cp cli/assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
+          cp release_assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
           sed -i 's|ExecStart=.*|ExecStart=%h/.local/bin/wayclip-daemon|' AppDir/usr/lib/systemd/user/wayclip-daemon.service
           chmod +x AppDir/usr/bin/*
           cat <<'EOF' > AppDir/AppRun
@@ -152,6 +152,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release_assets/*
+            wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
+            wayclip-cli-x86_64-unknown-linux-gnu
+            wayclip-daemon.service
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
