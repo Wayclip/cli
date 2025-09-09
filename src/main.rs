@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use std::process::Command as StdCommand;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
     Collect, PullClipsArgs, api, delete_file, gather_clip_data, gather_unified_clips,
@@ -431,6 +432,7 @@ async fn handle_config(editor: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+
 async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
@@ -445,21 +447,33 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
         bail!("Clip '{}' not found locally.", clip_filename);
     }
 
-    let player_name = player.unwrap_or("mpv");
+    let player_name = player.unwrap_or("mpv").to_string();
+
     println!(
         "⏵ Launching '{}' with {}...",
         clip_filename.cyan(),
         player_name
     );
-    let mut parts = player_name.split_whitespace();
-    let mut command = Command::new(parts.next().unwrap_or("mpv"));
-    command.args(parts);
-    command.arg(clip_file);
-    let mut child = command
-        .spawn()
-        .context(format!("Failed to launch media player '{player_name}'"))?;
 
-    let _ = child.wait().await;
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut parts = player_name.split_whitespace();
+        let mut command = StdCommand::new(parts.next().unwrap_or("mpv"));
+        command.args(parts);
+        command.arg(clip_file);
+
+        let status = command
+            .status()
+            .context(format!("Failed to launch media player '{player_name}'"))?;
+        
+        if !status.success() {
+            bail!("Media player exited with a non-zero status.");
+        }
+
+        Ok(())
+    }).await??;
+
+    print!("\x1B[2J\x1B[1;1H");
+
     Ok(())
 }
 
