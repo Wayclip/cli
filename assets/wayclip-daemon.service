@@ -4,7 +4,7 @@ After=graphical.target
 Wants=graphical.target
 
 [Service]
-ExecStart=__WAYCLIP_DAEMON_PATH__
+ExecStart=/usr/bin/wayclip-daemon
 Restart=always
 RestartSec=3
 
