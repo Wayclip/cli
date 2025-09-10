@@ -9,14 +9,14 @@ use inquire::{Confirm, Select, Text};
 use std::env;
 use std::path::Path;
 use std::process::ExitCode;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 use std::process::Stdio;
 use std::process::Command as StdCommand;
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
-    Collect, PullClipsArgs, api, delete_file, gather_clip_data, gather_unified_clips,
-    rename_all_entries, update_liked,
+    api, delete_file, gather_clip_data, gather_unified_clips, rename_all_entries, update_liked,
+    Collect, PullClipsArgs,
 };
 use wayclip_core::{models::UnifiedClipData, settings::Settings};
 
@@ -433,8 +433,6 @@ async fn handle_config(editor: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-
-
 async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
@@ -451,12 +449,6 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
 
     let player_name = player.unwrap_or("mpv").to_string();
 
-    println!(
-        "⏵ Launching '{}' with {}...",
-        clip_filename.cyan(),
-        player_name
-    );
-
     tokio::task::spawn_blocking(move || -> Result<()> {
         let mut parts = player_name.split_whitespace();
         let mut command = StdCommand::new(parts.next().unwrap_or("mpv"));
@@ -467,15 +459,10 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-
-        let status = command
-            .status()
+        command
+            .spawn()
             .context(format!("Failed to launch media player '{player_name}'"))?;
         
-        if !status.success() {
-            bail!("Media player exited with a non-zero status.");
-        }
-
         Ok(())
     }).await??;
 
