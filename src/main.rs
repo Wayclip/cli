@@ -472,10 +472,9 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
         Ok(())
     }).await??;
 
-    print!("\x1B[2J\x1B[1;1H");
-
     Ok(())
 }
+
 
 async fn handle_rename(name: &str) -> Result<()> {
     let name_stem = Path::new(name)
