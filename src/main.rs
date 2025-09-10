@@ -10,13 +10,12 @@ use std::env;
 use std::path::Path;
 use std::process::ExitCode;
 use std::process::Stdio;
-use std::process::Command as StdCommand;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
-    api, delete_file, gather_clip_data, gather_unified_clips, rename_all_entries, update_liked,
-    Collect, PullClipsArgs,
+    Collect, PullClipsArgs, api, delete_file, gather_clip_data, gather_unified_clips,
+    rename_all_entries, update_liked,
 };
 use wayclip_core::{models::UnifiedClipData, settings::Settings};
 
@@ -326,14 +325,11 @@ async fn handle_me() -> Result<()> {
 }
 
 async fn handle_share(clip_name: &str) -> Result<()> {
-    println!("{}", "○ Preparing to share...".cyan());
-
     let _ = api::get_current_user()
         .await
-        .context("Could not get user profile. Are you logged in?")?;
+        .context("You must be logged in to share clips.")?;
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
-
     let clip_filename = if clip_name.ends_with(".mp4") {
         clip_name.to_string()
     } else {
@@ -343,6 +339,15 @@ async fn handle_share(clip_name: &str) -> Result<()> {
 
     if !clip_path.exists() {
         bail!("Clip '{}' not found locally.", clip_name);
+    }
+
+    let confirmed = Confirm::new("Sharing associates the local file with a hosted version by name. After sharing, you will not be able to rename the local file. Continue?")
+        .with_default(true)
+        .prompt()?;
+
+    if !confirmed {
+        println!("{}", "Share cancelled.".yellow());
+        return Ok(());
     }
 
     let profile = api::get_current_user().await?;
@@ -361,7 +366,6 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         "{}",
         "◌ Uploading clip... (this may take a moment)".yellow()
     );
-
     let client = api::get_api_client().await?;
     match api::share_clip(&client, &clip_path).await {
         Ok(url) => {
@@ -370,20 +374,13 @@ async fn handle_share(clip_name: &str) -> Result<()> {
 
             match copy_to_clipboard(&url).await {
                 Ok(_) => println!("{}", "✔ URL automatically copied to clipboard!".green()),
-                Err(e) => {
-                    println!(
-                        "{}",
-                        format!("✗ Could not copy URL to clipboard: {e:#}").yellow()
-                    )
-                }
+                Err(e) => println!(
+                    "{}",
+                    format!("✗ Could not copy URL to clipboard: {e:#}").yellow()
+                ),
             }
         }
-        Err(api::ApiClientError::Unauthorized) => {
-            bail!("You must be logged in to share clips. Please run `wayclip login`.");
-        }
-        Err(e) => {
-            bail!("Failed to share clip: {}", e);
-        }
+        Err(e) => bail!("Failed to share clip: {}", e),
     }
     Ok(())
 }
@@ -448,25 +445,37 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
     }
 
     let player_name = player.unwrap_or("mpv").to_string();
+    let mut parts = player_name.split_whitespace();
+    let player_cmd = parts.next().unwrap_or("mpv");
+    let player_args = parts;
 
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut parts = player_name.split_whitespace();
-        let mut command = StdCommand::new(parts.next().unwrap_or("mpv"));
-        command.args(parts);
-        command.arg(clip_file);
+    let mut command = Command::new(player_cmd);
+    command.args(player_args);
+    command.arg(clip_file);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        command
-            .spawn()
-            .context(format!("Failed to launch media player '{player_name}'"))?;
-        
-        Ok(())
-    }).await??;
+    let status = command
+        .status()
+        .await
+        .context(format!("Failed to launch media player '{player_name}'"))?;
 
-    Ok(())
+    if status.success() {
+        return Ok(());
+    }
+
+    if let Some(code) = status.code() {
+        if code == 3 || code == 4 {
+            return Ok(());
+        }
+    }
+
+    bail!(
+        "Media player exited with an unexpected error status: {}",
+        status
+    );
 }
 
 async fn handle_rename(name: &str) -> Result<()> {
