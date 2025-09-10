@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use std::process::Stdio;
 use std::process::Command as StdCommand;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{
@@ -433,6 +434,7 @@ async fn handle_config(editor: Option<&str>) -> Result<()> {
 }
 
 
+
 async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
     let settings = Settings::load().await?;
     let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
@@ -461,6 +463,11 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
         command.args(parts);
         command.arg(clip_file);
 
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
         let status = command
             .status()
             .context(format!("Failed to launch media player '{player_name}'"))?;
@@ -474,7 +481,6 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
 
     Ok(())
 }
-
 
 async fn handle_rename(name: &str) -> Result<()> {
     let name_stem = Path::new(name)
