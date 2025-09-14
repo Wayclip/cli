@@ -1,4 +1,4 @@
-use crate::auth::{handle_login, handle_logout};
+use crate::auth::{handle_2fa_setup, handle_login, handle_logout};
 use crate::list::handle_list;
 use crate::manage::handle_manage;
 use anyhow::{Context, Result, bail};
@@ -81,6 +81,11 @@ pub enum Commands {
     Login,
     Logout,
     Me,
+    #[command(name = "2fa")]
+    TwoFactorAuth {
+        #[command(subcommand)]
+        action: TwoFactorCommand,
+    },
     Share {
         #[arg(help = "Name of the clip to share")]
         name: String,
@@ -104,6 +109,12 @@ pub enum DaemonCommand {
     Start,
     Stop,
     Restart,
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum TwoFactorCommand {
+    Setup,
     Status,
 }
 
@@ -179,6 +190,10 @@ async fn run() -> Result<()> {
         Commands::Login => handle_login().await?,
         Commands::Logout => handle_logout().await?,
         Commands::Me => handle_me().await?,
+        Commands::TwoFactorAuth { action } => match action {
+            TwoFactorCommand::Setup => handle_2fa_setup().await?,
+            TwoFactorCommand::Status => handle_2fa_status().await?,
+        },
         Commands::Share { name } => handle_share(name).await?,
         Commands::Save => handle_save().await?,
         Commands::List { .. } => handle_list(&cli.command).await?,
@@ -299,6 +314,14 @@ async fn handle_me() -> Result<()> {
 
             println!("{}", "┌─ Your Profile ─────────".bold());
             println!("│ {} {}", "Username:".cyan(), profile.user.username);
+            if let Some(email) = &profile.user.email {
+                let verified = if profile.user.email_verified_at.is_some() {
+                    "✔ Verified".green()
+                } else {
+                    "⚠ Not verified".yellow()
+                };
+                println!("│ {} {} ({})", "Email:".cyan(), email, verified);
+            }
             println!(
                 "│ {} {}",
                 "Tier:".cyan(),
@@ -312,7 +335,40 @@ async fn handle_me() -> Result<()> {
                 limit_gb,
                 percentage
             );
+            let two_fa_status = if profile.user.two_factor_enabled {
+                "Enabled ✔".green()
+            } else {
+                "Disabled".yellow()
+            };
+            println!("│ {} {}", "2FA:".cyan(), two_fa_status);
             println!("└────────────────────────");
+        }
+        Err(api::ApiClientError::Unauthorized) => {
+            bail!("You are not logged in. Please run `wayclip login` first.");
+        }
+        Err(e) => {
+            bail!("Failed to fetch profile: {}", e);
+        }
+    }
+    Ok(())
+}
+
+async fn handle_2fa_status() -> Result<()> {
+    match api::get_current_user().await {
+        Ok(profile) => {
+            if profile.user.two_factor_enabled {
+                println!(
+                    "{}",
+                    "✔ Two-Factor Authentication is ENABLED".green().bold()
+                );
+                println!("Your account is protected with 2FA.");
+            } else {
+                println!(
+                    "{}",
+                    "⚠ Two-Factor Authentication is DISABLED".yellow().bold()
+                );
+                println!("Run `wayclip 2fa setup` to enable 2FA for better security.");
+            }
         }
         Err(api::ApiClientError::Unauthorized) => {
             bail!("You are not logged in. Please run `wayclip login` first.");
