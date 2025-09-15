@@ -7,16 +7,13 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use inquire::{Confirm, Select, Text};
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use wayclip_core::control::DaemonManager;
-use wayclip_core::{
-    Collect, PullClipsArgs, api, delete_file, gather_clip_data, gather_unified_clips,
-    rename_all_entries, update_liked,
-};
+use wayclip_core::{api, delete_file, gather_unified_clips, rename_all_entries, update_liked};
 use wayclip_core::{models::UnifiedClipData, settings::Settings};
 
 pub mod auth;
@@ -227,17 +224,65 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-async fn find_unified_clip(name: &str) -> Result<UnifiedClipData> {
-    let name_stem = Path::new(name)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
+async fn find_unified_clip(name_input: &str) -> Result<UnifiedClipData> {
+    let trimmed_name = name_input.trim();
+
+    let name_stem = if trimmed_name.to_lowercase().ends_with(".mp4") {
+        &trimmed_name[..trimmed_name.len() - 4]
+    } else {
+        trimmed_name
+    };
+
+    if name_stem.is_empty() {
+        bail!("Clip name cannot be empty.");
+    }
 
     let all_clips = gather_unified_clips().await?;
     all_clips
         .into_iter()
-        .find(|clip| clip.name == name_stem)
-        .context(format!("Clip '{name_stem}' not found."))
+        .find(|clip| clip.name.eq_ignore_ascii_case(name_stem))
+        .context(format!("Clip '{}' not found.", name_stem))
+}
+
+fn sanitize_and_validate_filename_stem(new_name_input: &str) -> Result<String> {
+    let trimmed = new_name_input.trim();
+    if trimmed.is_empty() {
+        bail!("New name cannot be empty.");
+    }
+    let sanitized = trimmed.replace(' ', "_");
+
+    if sanitized
+        .chars()
+        .any(|c| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+    {
+        bail!("New name contains invalid characters (< > : \" / \\ | ? *).");
+    }
+    Ok(sanitized)
+}
+
+fn validate_ffmpeg_time(time_str: &str) -> Result<String> {
+    let trimmed = time_str.trim();
+    if trimmed.parse::<f64>().is_ok() {
+        return Ok(trimmed.to_string());
+    }
+    let parts: Vec<&str> = trimmed.split(':').collect();
+    if parts.len() > 3 || parts.is_empty() {
+        bail!(
+            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
+            time_str
+        );
+    }
+    if parts
+        .iter()
+        .all(|p| !p.is_empty() && p.parse::<f64>().is_ok())
+    {
+        Ok(trimmed.to_string())
+    } else {
+        bail!(
+            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
+            time_str
+        );
+    }
 }
 
 async fn handle_like(name: &str) -> Result<()> {
@@ -384,18 +429,12 @@ async fn handle_share(clip_name: &str) -> Result<()> {
     let _ = api::get_current_user()
         .await
         .context("You must be logged in to share clips.")?;
-    let settings = Settings::load().await?;
-    let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
-    let clip_filename = if clip_name.ends_with(".mp4") {
-        clip_name.to_string()
-    } else {
-        format!("{clip_name}.mp4")
-    };
-    let clip_path = clips_path.join(&clip_filename);
 
-    if !clip_path.exists() {
-        bail!("Clip '{}' not found locally.", clip_name);
-    }
+    let clip = find_unified_clip(clip_name).await?;
+    let clip_path_str = clip
+        .local_path
+        .context(format!("Clip '{}' not found locally.", clip.name))?;
+    let clip_path = Path::new(&clip_path_str);
 
     let confirmed = Confirm::new("Sharing associates the local file with a hosted version by name. After sharing, you will not be able to rename the local file. Continue?")
         .with_default(true)
@@ -487,18 +526,11 @@ async fn handle_config(editor: Option<&str>) -> Result<()> {
 }
 
 async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
-    let settings = Settings::load().await?;
-    let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
-    let clip_filename = if name.ends_with(".mp4") {
-        name.to_string()
-    } else {
-        format!("{name}.mp4")
-    };
-    let clip_file = clips_path.join(&clip_filename);
-
-    if !clip_file.exists() {
-        bail!("Clip '{}' not found locally.", clip_filename);
-    }
+    let clip = find_unified_clip(name).await?;
+    let clip_file_str = clip
+        .local_path
+        .context(format!("Clip '{}' not found locally.", clip.name))?;
+    let clip_file = Path::new(&clip_file_str);
 
     let player_name = player.unwrap_or("mpv").to_string();
     let mut parts = player_name.split_whitespace();
@@ -535,42 +567,35 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
 }
 
 async fn handle_rename(name: &str) -> Result<()> {
-    let name_stem = Path::new(name)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
+    let clip_to_rename = find_unified_clip(name).await?;
 
-    let clips = gather_clip_data(
-        Collect::All,
-        PullClipsArgs {
-            page: 1,
-            page_size: 999,
-            search_query: Some(name_stem.to_string()),
-        },
-    )
-    .await?
-    .clips;
+    if clip_to_rename.is_hosted {
+        bail!("Cannot rename a hosted clip. The name is locked after sharing.");
+    }
 
-    let clip_to_rename = clips
-        .first()
-        .context(format!("Clip '{name_stem}' not found."))?;
+    let clip_path_str = clip_to_rename
+        .local_path
+        .context("Cannot rename a clip that does not exist locally.")?;
+    let clip_path = PathBuf::from(&clip_path_str);
 
-    let new_name_stem = Text::new("Enter new name (without extension):")
+    let new_name_input = Text::new("Enter new name (without extension):")
         .with_initial_value(&clip_to_rename.name)
         .prompt()?;
 
-    if new_name_stem.is_empty() || new_name_stem == clip_to_rename.name {
-        println!("{}", "Rename cancelled.".yellow());
+    let new_name_stem = sanitize_and_validate_filename_stem(&new_name_input)?;
+
+    if new_name_stem == clip_to_rename.name {
+        println!("{}", "Rename cancelled (name is the same).".yellow());
         return Ok(());
     }
 
-    let extension = Path::new(&clip_to_rename.path)
+    let extension = clip_path
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("mp4");
     let new_full_name = format!("{new_name_stem}.{extension}");
 
-    match rename_all_entries(&clip_to_rename.path, &new_full_name).await {
+    match rename_all_entries(&clip_path_str, &new_full_name).await {
         Ok(_) => println!("{}", format!("✔ Renamed to '{new_full_name}'").green()),
         Err(e) => bail!("Failed to rename: {}", e),
     }
@@ -578,55 +603,38 @@ async fn handle_rename(name: &str) -> Result<()> {
 }
 
 async fn handle_delete(name: &str) -> Result<()> {
-    let name_stem = Path::new(name)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
-
-    let clips = gather_clip_data(
-        Collect::All,
-        PullClipsArgs {
-            page: 1,
-            page_size: 999,
-            search_query: Some(name_stem.to_string()),
-        },
-    )
-    .await?
-    .clips;
-
-    let clip_to_delete = clips
-        .first()
-        .context(format!("Clip '{name_stem}' not found."))?;
-
-    let hosted_clips = api::get_hosted_clips_index().await.unwrap_or_default();
-    let clip_filename = Path::new(&clip_to_delete.path)
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let hosted_info = hosted_clips.iter().find(|c| c.file_name == clip_filename);
+    let clip_to_delete = find_unified_clip(name).await?;
 
     println!("Preparing to delete '{}'.", name.cyan());
 
-    if let Some(hosted) = hosted_info {
+    if let Some(hosted_id) = clip_to_delete.hosted_id {
         let confirmed = Confirm::new("This clip is hosted on the server. Delete the server copy?")
             .with_default(true)
             .prompt()?;
         if confirmed {
             let client = api::get_api_client().await?;
-            api::delete_clip(&client, hosted.id).await?;
+            api::delete_clip(&client, hosted_id).await?;
             println!("{}", "✔ Server copy deleted.".green());
         }
     }
 
-    let confirmed_local = Confirm::new("Delete the local file? This cannot be undone.")
-        .with_default(false)
-        .prompt()?;
-    if confirmed_local {
-        delete_file(&clip_to_delete.path)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-        println!("{}", "✔ Local file deleted.".green());
+    if let Some(local_path_str) = &clip_to_delete.local_path {
+        let confirmed_local = Confirm::new("Delete the local file? This cannot be undone.")
+            .with_default(false)
+            .prompt()?;
+        if confirmed_local {
+            delete_file(local_path_str)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+            println!("{}", "✔ Local file deleted.".green());
+        }
+    }
+
+    if clip_to_delete.local_path.is_none() && clip_to_delete.hosted_id.is_none() {
+        println!(
+            "{}",
+            "Clip metadata found, but no local or hosted file to delete.".yellow()
+        );
     }
 
     Ok(())
@@ -634,8 +642,8 @@ async fn handle_delete(name: &str) -> Result<()> {
 
 async fn handle_edit(
     name: &str,
-    start_time: &str,
-    end_time: &str,
+    start_time_str: &str,
+    end_time_str: &str,
     disable_audio: &bool,
 ) -> Result<()> {
     println!("{} '{}'...", "Preparing to edit".cyan(), name);
@@ -644,33 +652,28 @@ async fn handle_edit(
         "Note: This operation is performed locally and does not affect hosted clips.".yellow()
     );
 
-    let settings = Settings::load().await?;
-    let clips_path = Settings::home_path().join(&settings.save_path_from_home_string);
+    let start_time = validate_ffmpeg_time(start_time_str)?;
+    let end_time = validate_ffmpeg_time(end_time_str)?;
 
-    let clip_filename = if name.ends_with(".mp4") {
-        name.to_string()
-    } else {
-        format!("{name}.mp4")
-    };
-    let clip_path = clips_path.join(&clip_filename);
-
-    if !clip_path.exists() {
-        bail!("Clip '{}' not found locally.", name);
-    }
+    let clip = find_unified_clip(name).await?;
+    let clip_path_str = clip
+        .local_path
+        .context(format!("Clip '{}' not found locally.", clip.name))?;
+    let clip_path = PathBuf::from(&clip_path_str);
 
     let options = vec!["Create a new, edited copy", "Modify the original file"];
     let choice = Select::new("What would you like to do?", options).prompt()?;
 
     let (output_path, is_overwrite) = if choice == "Create a new, edited copy" {
-        let file_stem = Path::new(name)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("edited_clip");
-        let new_name_suggestion = format!("{file_stem}_edited");
-        let new_name = Text::new("Enter name for the new clip (without extension):")
+        let new_name_suggestion = format!("{}_edited", clip.name);
+        let new_name_input = Text::new("Enter name for the new clip (without extension):")
             .with_initial_value(&new_name_suggestion)
             .prompt()?;
-        (clip_path.with_file_name(format!("{new_name}.mp4")), false)
+        let new_name_stem = sanitize_and_validate_filename_stem(&new_name_input)?;
+        (
+            clip_path.with_file_name(format!("{new_name_stem}.mp4")),
+            false,
+        )
     } else {
         let confirmed = Confirm::new("Modifying the original file cannot be undone. Are you sure?")
             .with_default(false)

@@ -1,5 +1,5 @@
 use crate::{copy_to_clipboard, handle_edit, handle_share, handle_view};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use colored::*;
 use inquire::{Confirm, Select, Text};
@@ -45,7 +45,51 @@ impl fmt::Display for ClipMenuItem {
 
 async fn find_clip_by_name(name: &str) -> Result<Option<UnifiedClipData>> {
     let clips = gather_unified_clips().await?;
-    Ok(clips.into_iter().find(|c| c.name == name))
+    let trimmed_name = name.trim();
+    Ok(clips
+        .into_iter()
+        .find(|c| c.name.eq_ignore_ascii_case(trimmed_name)))
+}
+
+fn sanitize_and_validate_filename_stem(new_name_input: &str) -> Result<String> {
+    let trimmed = new_name_input.trim();
+    if trimmed.is_empty() {
+        bail!("New name cannot be empty.");
+    }
+
+    let sanitized = trimmed.replace(' ', "_");
+    if sanitized
+        .chars()
+        .any(|c| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+    {
+        bail!("New name contains invalid characters (< > : \" / \\ | ? *).");
+    }
+    Ok(sanitized.to_string())
+}
+
+fn validate_ffmpeg_time(time_str: &str) -> Result<String> {
+    let trimmed = time_str.trim();
+    if trimmed.parse::<f64>().is_ok() {
+        return Ok(trimmed.to_string());
+    }
+    let parts: Vec<&str> = trimmed.split(':').collect();
+    if parts.len() > 3 || parts.is_empty() {
+        bail!(
+            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
+            time_str
+        );
+    }
+    if parts
+        .iter()
+        .all(|p| !p.is_empty() && p.parse::<f64>().is_ok())
+    {
+        Ok(trimmed.to_string())
+    } else {
+        bail!(
+            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
+            time_str
+        );
+    }
 }
 
 pub async fn handle_manage() -> Result<()> {
@@ -169,22 +213,32 @@ pub async fn handle_manage() -> Result<()> {
                             .local_path
                             .as_ref()
                             .context("No local path for rename")?;
-                        let new_name_stem = Text::new("Enter new name (without extension):")
+                        let new_name_input = Text::new("Enter new name (without extension):")
                             .with_initial_value(&selected_clip.name)
                             .prompt()?;
-                        if !new_name_stem.is_empty() && new_name_stem != selected_clip.name {
-                            let extension = Path::new(local_path)
-                                .extension()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or("mp4");
-                            let new_full_name = format!("{new_name_stem}.{extension}");
-                            match rename_all_entries(local_path, &new_full_name).await {
-                                Ok(_) => println!("✔ Renamed to '{}'", new_full_name.green()),
-                                Err(e) => println!("✗ Failed to rename: {}", e.to_string().red()),
+
+                        match sanitize_and_validate_filename_stem(&new_name_input) {
+                            Ok(new_name_stem) => {
+                                if new_name_stem != selected_clip.name {
+                                    let extension = Path::new(local_path)
+                                        .extension()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or("mp4");
+                                    let new_full_name = format!("{new_name_stem}.{extension}");
+                                    match rename_all_entries(local_path, &new_full_name).await {
+                                        Ok(_) => {
+                                            println!("✔ Renamed to '{}'", new_full_name.green())
+                                        }
+                                        Err(e) => {
+                                            println!("✗ Failed to rename: {}", e.to_string().red())
+                                        }
+                                    }
+                                    break 'action_loop;
+                                } else {
+                                    println!("{}", "Rename cancelled.".yellow());
+                                }
                             }
-                            break 'action_loop;
-                        } else {
-                            println!("{}", "Rename cancelled.".yellow());
+                            Err(e) => println!("✗ Invalid name: {}", e.to_string().red()),
                         }
                     }
                 }
@@ -232,21 +286,33 @@ pub async fn handle_manage() -> Result<()> {
                     println!("Opening URL in browser...");
                 }
                 "✎ Edit" => {
-                    let start_time =
+                    let start_time_input =
                         Text::new("Enter start time (e.g., 00:00:05 or 5):").prompt()?;
-                    let end_time = Text::new("Enter end time (e.g., 00:00:10 or 10):").prompt()?;
-                    let disable_audio = Confirm::new("Disable audio?")
-                        .with_default(false)
-                        .prompt()?;
-                    if let Err(e) = handle_edit(
-                        &selected_clip.full_filename,
-                        &start_time,
-                        &end_time,
-                        &disable_audio,
-                    )
-                    .await
-                    {
-                        println!("{} {}", "✗ Edit failed:".red(), e);
+                    let end_time_input =
+                        Text::new("Enter end time (e.g., 00:00:10 or 10):").prompt()?;
+
+                    match (
+                        validate_ffmpeg_time(&start_time_input),
+                        validate_ffmpeg_time(&end_time_input),
+                    ) {
+                        (Ok(start_time), Ok(end_time)) => {
+                            let disable_audio = Confirm::new("Disable audio?")
+                                .with_default(false)
+                                .prompt()?;
+                            if let Err(e) = handle_edit(
+                                &selected_clip.full_filename,
+                                &start_time,
+                                &end_time,
+                                &disable_audio,
+                            )
+                            .await
+                            {
+                                println!("{} {}", "✗ Edit failed:".red(), e);
+                            }
+                        }
+                        (Err(e), _) | (_, Err(e)) => {
+                            println!("{} {}", "✗ Invalid time format:".red(), e)
+                        }
                     }
                 }
                 "⎘ Copy Name" => match copy_to_clipboard(&selected_clip.name).await {

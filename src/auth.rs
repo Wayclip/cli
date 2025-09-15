@@ -79,7 +79,11 @@ async fn handle_oauth_login(provider: &str) -> Result<()> {
 
 async fn handle_password_login() -> Result<()> {
     let settings = Settings::load().await?;
-    let email = Text::new("Enter your email:").prompt()?;
+    let email = Text::new("Enter your email:").prompt()?.trim().to_string();
+    if email.is_empty() {
+        bail!("Email cannot be empty.");
+    }
+
     let password = Password::new("Enter your password:")
         .with_display_mode(PasswordDisplayMode::Masked)
         .prompt()?;
@@ -139,7 +143,13 @@ async fn handle_2fa_authentication(two_fa_token: &str) -> Result<()> {
     let settings = Settings::load().await?;
 
     println!("{}", "Two-Factor Authentication Required".yellow().bold());
-    let code = Text::new("Enter your 2FA code from your authenticator app:").prompt()?;
+    let code = Text::new("Enter your 2FA code from your authenticator app:")
+        .prompt()?
+        .trim()
+        .to_string();
+    if code.is_empty() {
+        bail!("2FA code cannot be empty.");
+    }
 
     let client = reqwest::Client::new();
     let response = client
@@ -173,18 +183,22 @@ async fn handle_register() -> Result<()> {
     let settings = Settings::load().await?;
 
     println!("{}", "Create a new account".cyan().bold());
-    let username = Text::new("Enter your username:").prompt()?;
-    let email = Text::new("Enter your email:").prompt()?;
+    let username = Text::new("Enter your username:")
+        .prompt()?
+        .trim()
+        .to_string();
+    if username.is_empty() {
+        bail!("Username cannot be empty.");
+    }
+
+    let email = Text::new("Enter your email:").prompt()?.trim().to_string();
+    if email.is_empty() {
+        bail!("Email cannot be empty.");
+    }
+
     let password = Password::new("Enter your password:")
         .with_display_mode(PasswordDisplayMode::Masked)
         .prompt()?;
-    let confirm_password = Password::new("Confirm your password:")
-        .with_display_mode(PasswordDisplayMode::Masked)
-        .prompt()?;
-
-    if password != confirm_password {
-        bail!("Passwords do not match.");
-    }
 
     let client = reqwest::Client::new();
     let response = client
@@ -298,7 +312,10 @@ pub async fn handle_2fa_setup() -> Result<()> {
     println!("{qr_code_base64}");
 
     println!("\n4. After adding to your app, enter a code to verify:");
-    let code = Text::new("Enter verification code from your 2FA app:").prompt()?;
+    let code = Text::new("Enter verification code from your 2FA app:")
+        .prompt()?
+        .trim()
+        .to_string();
 
     let verify_response = client
         .post(format!("{}/auth/2fa/verify", settings.api_url))

@@ -1,6 +1,6 @@
 [package]
 name = "wayclip-cli"
-version = "0.1.65"
+version = "0.1.66"
 edition = "2024"
 
 [[bin]]
@@ -25,3 +25,4 @@ uuid = "1.18.0"
 quick-error = "2.0.1"
 wayclip_core = "0.1.10"
 reqwest = { version = "0.12.23", features = ["json"] }
+fuzzy-matcher = "0.3.7"
