@@ -171,7 +171,7 @@ pub async fn copy_to_clipboard(text: &str) -> Result<()> {
 #[tokio::main]
 async fn main() -> ExitCode {
     if let Err(e) = run().await {
-        eprintln!("{} {:#}", "Error:".red().bold(), e);
+        eprintln!("{} {:#}", "✗ Error:".red().bold(), e);
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
@@ -180,7 +180,7 @@ async fn main() -> ExitCode {
 async fn run() -> Result<()> {
     let cli = Cli::parse();
     if cli.debug {
-        println!("{}", "Debug mode is ON".yellow());
+        println!("{}", "○ Debug mode is ON".yellow());
     }
 
     match &cli.command {
@@ -441,7 +441,7 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         .prompt()?;
 
     if !confirmed {
-        println!("{}", "Share cancelled.".yellow());
+        println!("{}", "○ Share cancelled.".yellow());
         return Ok(());
     }
 
@@ -578,14 +578,14 @@ async fn handle_rename(name: &str) -> Result<()> {
         .context("Cannot rename a clip that does not exist locally.")?;
     let clip_path = PathBuf::from(&clip_path_str);
 
-    let new_name_input = Text::new("Enter new name (without extension):")
+    let new_name_input = Text::new("› Enter new name (without extension):")
         .with_initial_value(&clip_to_rename.name)
         .prompt()?;
 
     let new_name_stem = sanitize_and_validate_filename_stem(&new_name_input)?;
 
     if new_name_stem == clip_to_rename.name {
-        println!("{}", "Rename cancelled (name is the same).".yellow());
+        println!("{}", "○ Rename cancelled (name is the same).".yellow());
         return Ok(());
     }
 
@@ -605,7 +605,7 @@ async fn handle_rename(name: &str) -> Result<()> {
 async fn handle_delete(name: &str) -> Result<()> {
     let clip_to_delete = find_unified_clip(name).await?;
 
-    println!("Preparing to delete '{}'.", name.cyan());
+    println!("○ Preparing to delete '{}'.", name.cyan());
 
     if let Some(hosted_id) = clip_to_delete.hosted_id {
         let confirmed = Confirm::new("This clip is hosted on the server. Delete the server copy?")
@@ -633,7 +633,7 @@ async fn handle_delete(name: &str) -> Result<()> {
     if clip_to_delete.local_path.is_none() && clip_to_delete.hosted_id.is_none() {
         println!(
             "{}",
-            "Clip metadata found, but no local or hosted file to delete.".yellow()
+            "○ Clip metadata found, but no local or hosted file to delete.".yellow()
         );
     }
 
@@ -646,7 +646,7 @@ async fn handle_edit(
     end_time_str: &str,
     disable_audio: &bool,
 ) -> Result<()> {
-    println!("{} '{}'...", "Preparing to edit".cyan(), name);
+    println!("○ Preparing to edit '{}'...", name.cyan());
     println!(
         "{}",
         "Note: This operation is performed locally and does not affect hosted clips.".yellow()
@@ -666,7 +666,7 @@ async fn handle_edit(
 
     let (output_path, is_overwrite) = if choice == "Create a new, edited copy" {
         let new_name_suggestion = format!("{}_edited", clip.name);
-        let new_name_input = Text::new("Enter name for the new clip (without extension):")
+        let new_name_input = Text::new("› Enter name for the new clip (without extension):")
             .with_initial_value(&new_name_suggestion)
             .prompt()?;
         let new_name_stem = sanitize_and_validate_filename_stem(&new_name_input)?;
@@ -679,7 +679,7 @@ async fn handle_edit(
             .with_default(false)
             .prompt()?;
         if !confirmed {
-            println!("{}", "Edit cancelled.".yellow());
+            println!("{}", "○ Edit cancelled.".yellow());
             return Ok(());
         }
         (clip_path.clone(), true)
@@ -687,7 +687,7 @@ async fn handle_edit(
 
     let temp_output_path = output_path.with_extension("tmp.mp4");
 
-    println!("{}", "Processing clip...".yellow());
+    println!("{}", "◌ Processing clip...".yellow());
 
     let mut command = Command::new("ffmpeg");
     command

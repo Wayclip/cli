@@ -5,15 +5,46 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
+  workflow_dispatch:
+
 jobs:
   build-and-release:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      - name: Checkout CLI repository
+      - name: Set Environment from Trigger
+        id: set_env
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "Triggered by push tag: ${{ github.ref_name }}"
+            CLI_VERSION_TAG="${{ github.ref_name }}"
+          else
+            echo "Triggered by '${{ github.event_name }}'. Finding latest CLI release tag."
+            CLI_VERSION_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.tag_name')
+            if [[ -z "$CLI_VERSION_TAG" || "$CLI_VERSION_TAG" == "null" ]]; then
+              echo "::error::Could not determine the latest CLI release tag."
+              exit 1
+            fi
+            echo "Found latest CLI release tag to rebuild: $CLI_VERSION_TAG"
+          fi
+
+          echo "Fetching latest core release tag..."
+          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
+          if [[ -z "$CORE_TAG" || "$CORE_TAG" == "null" ]]; then
+            echo "::error::Could not determine the latest core release tag."
+            exit 1
+          fi
+          echo "Found latest core release tag: $CORE_TAG"
+
+          echo "PKG_VER=${CLI_VERSION_TAG#refs/tags/v}" >> $GITHUB_ENV
+          echo "CLI_TAG_REF=${CLI_VERSION_TAG}" >> $GITHUB_ENV
+          echo "CORE_TAG_FULL=${CORE_TAG}" >> $GITHUB_ENV
+
+      - name: Checkout CLI repository at correct tag
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.CLI_TAG_REF }}
           path: cli
 
       - name: Setup Rust
@@ -31,12 +62,6 @@ jobs:
             libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libdbus-1-dev libspa-0.2-dev \
             libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libx11-dev libasound2-dev libfuse2 wget jq bsdmainutils
-
-      - name: Set Environment from Tag and API
-        run: |
-          echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
-          echo "CORE_TAG_FULL=${CORE_TAG}" >> $GITHUB_ENV
 
       - name: Download and Extract Core Binaries
         run: |
@@ -84,6 +109,7 @@ jobs:
       - name: Generate correct PKGBUILD for AUR
         run: |
           cat <<'PKG' > PKGBUILD.in
+          # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
           pkgver=@PKG_VER@
           pkgrel=1
@@ -135,8 +161,10 @@ jobs:
         with:
           name: release-assets
 
-      - name: Set Environment from Tag
-        run: echo "PKG_VER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - name: Set Environment from downloaded artifacts
+        run: |
+          echo "PKG_VER=$(grep -oP 'pkgver=\K.*' PKGBUILD)" >> $GITHUB_ENV
+          echo "CORE_TAG_FULL=$(grep -oP '_core_ver=\K.*' PKGBUILD)" >> $GITHUB_ENV
 
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
@@ -146,14 +174,17 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to version v${{ env.PKG_VER }}"
+          commit_message: "Update to v${{ env.PKG_VER }} (core: ${{ env.CORE_TAG_FULL }})"
 
       - name: Upload Assets to GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: |
             wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
             wayclip-cli-x86_64-unknown-linux-gnu
+            wayclip-daemon
+            wayclip-trigger
             wayclip-daemon.service
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

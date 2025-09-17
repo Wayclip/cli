@@ -18,6 +18,7 @@ pub async fn handle_list(command: &Commands) -> Result<()> {
         unreachable!()
     };
 
+    println!("{}", "◌ Fetching clips...".yellow());
     let mut clips = gather_clip_data(
         Collect::All,
         PullClipsArgs {
@@ -31,7 +32,7 @@ pub async fn handle_list(command: &Commands) -> Result<()> {
     .clips;
 
     if clips.is_empty() {
-        println!("{}", "No clips found.".yellow());
+        println!("{}", "○ No clips found.".yellow());
         return Ok(());
     }
 
@@ -91,7 +92,7 @@ pub async fn handle_list(command: &Commands) -> Result<()> {
         if *extra {
             let mut meta = Vec::new();
             if clip.liked {
-                meta.push("♥".to_string());
+                meta.push("♥".red().to_string());
             }
             if !clip.tags.is_empty() {
                 meta.push(format!(

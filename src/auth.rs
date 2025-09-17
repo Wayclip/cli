@@ -79,12 +79,15 @@ async fn handle_oauth_login(provider: &str) -> Result<()> {
 
 async fn handle_password_login() -> Result<()> {
     let settings = Settings::load().await?;
-    let email = Text::new("Enter your email:").prompt()?.trim().to_string();
+    let email = Text::new("› Enter your email:")
+        .prompt()?
+        .trim()
+        .to_string();
     if email.is_empty() {
         bail!("Email cannot be empty.");
     }
 
-    let password = Password::new("Enter your password:")
+    let password = Password::new("› Enter your password:")
         .with_display_mode(PasswordDisplayMode::Masked)
         .prompt()?;
 
@@ -142,8 +145,8 @@ async fn handle_password_login() -> Result<()> {
 async fn handle_2fa_authentication(two_fa_token: &str) -> Result<()> {
     let settings = Settings::load().await?;
 
-    println!("{}", "Two-Factor Authentication Required".yellow().bold());
-    let code = Text::new("Enter your 2FA code from your authenticator app:")
+    println!("{}", "○ Two-Factor Authentication Required".yellow().bold());
+    let code = Text::new("› Enter your 2FA code from your authenticator app:")
         .prompt()?
         .trim()
         .to_string();
@@ -182,8 +185,8 @@ async fn handle_2fa_authentication(two_fa_token: &str) -> Result<()> {
 async fn handle_register() -> Result<()> {
     let settings = Settings::load().await?;
 
-    println!("{}", "Create a new account".cyan().bold());
-    let username = Text::new("Enter your username:")
+    println!("{}", "○ Create a new account".cyan().bold());
+    let username = Text::new("› Enter your username:")
         .prompt()?
         .trim()
         .to_string();
@@ -191,12 +194,15 @@ async fn handle_register() -> Result<()> {
         bail!("Username cannot be empty.");
     }
 
-    let email = Text::new("Enter your email:").prompt()?.trim().to_string();
+    let email = Text::new("› Enter your email:")
+        .prompt()?
+        .trim()
+        .to_string();
     if email.is_empty() {
         bail!("Email cannot be empty.");
     }
 
-    let password = Password::new("Enter your password:")
+    let password = Password::new("› Enter your password:")
         .with_display_mode(PasswordDisplayMode::Masked)
         .prompt()?;
 
@@ -215,7 +221,7 @@ async fn handle_register() -> Result<()> {
         println!("{}", "✔ Registration successful!".green().bold());
         println!(
             "{}",
-            "Please check your email to verify your account before logging in.".yellow()
+            "◌ Please check your email to verify your account before logging in.".yellow()
         );
         return Ok(());
     }
@@ -245,7 +251,7 @@ async fn handle_resend_verification(email: &str) -> Result<()> {
             "✔ Verification email sent (if account exists).".green()
         );
     } else {
-        println!("{}", "Could not send verification email.".yellow());
+        println!("{}", "✗ Could not send verification email.".yellow());
     }
 
     Ok(())
@@ -304,7 +310,7 @@ pub async fn handle_2fa_setup() -> Result<()> {
         .as_str()
         .context("No QR code received")?;
 
-    println!("{}", "Two-Factor Authentication Setup".cyan().bold());
+    println!("{}", "○ Two-Factor Authentication Setup".cyan().bold());
     println!("1. Install a 2FA app like Google Authenticator or Authy");
     println!("2. Scan the QR code below OR manually enter this secret:");
     println!("   {}", secret.green());
@@ -312,7 +318,7 @@ pub async fn handle_2fa_setup() -> Result<()> {
     println!("{qr_code_base64}");
 
     println!("\n4. After adding to your app, enter a code to verify:");
-    let code = Text::new("Enter verification code from your 2FA app:")
+    let code = Text::new("› Enter verification code from your 2FA app:")
         .prompt()?
         .trim()
         .to_string();

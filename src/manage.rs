@@ -1,5 +1,5 @@
 use crate::{copy_to_clipboard, handle_edit, handle_share, handle_view};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
 use colored::*;
 use inquire::{Confirm, Select, Text};
@@ -10,45 +10,41 @@ use wayclip_core::{
     update_liked,
 };
 
-struct ClipMenuItem {
-    clip_data: UnifiedClipData,
+#[derive(Clone)]
+struct ClipDisplay {
+    name: String,
+    display_string: String,
 }
 
-impl fmt::Display for ClipMenuItem {
+impl fmt::Display for ClipDisplay {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let clip = &self.clip_data;
-        let now = Utc::now();
-        let clip_age = now.signed_duration_since(clip.created_at.with_timezone(&Utc));
-        write!(
-            f,
-            "{} {} {}{}{}",
-            if clip.local_path.is_some() {
-                "⌨"
-            } else {
-                "  "
-            },
-            if clip.is_hosted { "☁" } else { "  " },
-            if clip.local_data.as_ref().map_or(false, |d| d.liked) {
-                "♥ ".red()
-            } else {
-                "".normal()
-            },
-            clip.name,
-            if clip_age < chrono::Duration::hours(24) {
-                " [NEW]".yellow()
-            } else {
-                "".normal()
-            }
-        )
+        write!(f, "{}", self.display_string)
     }
 }
 
-async fn find_clip_by_name(name: &str) -> Result<Option<UnifiedClipData>> {
-    let clips = gather_unified_clips().await?;
-    let trimmed_name = name.trim();
-    Ok(clips
-        .into_iter()
-        .find(|c| c.name.eq_ignore_ascii_case(trimmed_name)))
+fn generate_display_string(clip: &UnifiedClipData) -> String {
+    let now = Utc::now();
+    let clip_age = now.signed_duration_since(clip.created_at.with_timezone(&Utc));
+    format!(
+        "{} {} {}{}{}",
+        if clip.local_path.is_some() {
+            "⌨"
+        } else {
+            "  "
+        },
+        if clip.is_hosted { "☁" } else { "  " },
+        if clip.local_data.as_ref().map_or(false, |d| d.liked) {
+            "♥ ".red().to_string()
+        } else {
+            "".normal().to_string()
+        },
+        clip.name,
+        if clip_age < chrono::Duration::hours(24) {
+            " [NEW]".yellow().to_string()
+        } else {
+            "".normal().to_string()
+        }
+    )
 }
 
 fn sanitize_and_validate_filename_stem(new_name_input: &str) -> Result<String> {
@@ -67,41 +63,16 @@ fn sanitize_and_validate_filename_stem(new_name_input: &str) -> Result<String> {
     Ok(sanitized.to_string())
 }
 
-fn validate_ffmpeg_time(time_str: &str) -> Result<String> {
-    let trimmed = time_str.trim();
-    if trimmed.parse::<f64>().is_ok() {
-        return Ok(trimmed.to_string());
-    }
-    let parts: Vec<&str> = trimmed.split(':').collect();
-    if parts.len() > 3 || parts.is_empty() {
-        bail!(
-            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
-            time_str
-        );
-    }
-    if parts
-        .iter()
-        .all(|p| !p.is_empty() && p.parse::<f64>().is_ok())
-    {
-        Ok(trimmed.to_string())
-    } else {
-        bail!(
-            "Invalid time format '{}'. Use seconds (e.g., 5.5) or HH:MM:SS format.",
-            time_str
-        );
-    }
-}
-
 pub async fn handle_manage() -> Result<()> {
     let settings = wayclip_core::settings::Settings::load().await?;
 
-    'main_loop: loop {
-        println!();
-        let mut all_clips = gather_unified_clips().await?;
+    println!("\n{}", "◌ Loading clips...".yellow());
+    let mut all_clips: Vec<UnifiedClipData> = gather_unified_clips().await?;
 
+    'main_loop: loop {
         if all_clips.is_empty() {
-            println!("{}", "No clips found.".yellow());
-            break;
+            println!("{}", "○ No clips found.".yellow());
+            return Ok(());
         }
 
         let sort_options = vec![
@@ -109,8 +80,10 @@ pub async fn handle_manage() -> Result<()> {
             "Name (A-Z)",
             "Liked First",
             "Hosted First",
+            "[Refresh List]",
             "[Quit]",
         ];
+
         let sort_choice = match Select::new("Filter / Sort clips:", sort_options).prompt() {
             Ok(choice) => choice,
             Err(_) => break 'main_loop,
@@ -126,22 +99,30 @@ pub async fn handle_manage() -> Result<()> {
                     .as_ref()
                     .map_or(false, |d| d.liked)
                     .cmp(&a.local_data.as_ref().map_or(false, |d| d.liked))
-                    .then(b.created_at.cmp(&a.created_at))
+                    .then_with(|| b.created_at.cmp(&a.created_at))
             }),
             "Hosted First" => all_clips.sort_by(|a, b| {
                 b.is_hosted
                     .cmp(&a.is_hosted)
-                    .then(b.created_at.cmp(&a.created_at))
+                    .then_with(|| b.created_at.cmp(&a.created_at))
             }),
+            "[Refresh List]" => {
+                println!("{}", "◌ Refreshing clips...".yellow());
+                all_clips = gather_unified_clips().await?;
+                continue 'main_loop;
+            }
             _ => break 'main_loop,
         }
 
-        let clip_menu_items: Vec<ClipMenuItem> = all_clips
-            .into_iter()
-            .map(|clip| ClipMenuItem { clip_data: clip })
+        let display_items: Vec<_> = all_clips
+            .iter()
+            .map(|clip| ClipDisplay {
+                name: clip.name.clone(),
+                display_string: generate_display_string(clip),
+            })
             .collect();
 
-        let selected_item = match Select::new("Select a clip to manage:", clip_menu_items)
+        let selected_display_item = match Select::new("Select a clip to manage:", display_items)
             .with_page_size(15)
             .prompt()
         {
@@ -149,217 +130,204 @@ pub async fn handle_manage() -> Result<()> {
             Err(_) => continue 'main_loop,
         };
 
-        let mut selected_clip = selected_item.clip_data;
+        let selected_idx = all_clips
+            .iter()
+            .position(|c| c.name == selected_display_item.name)
+            .context("Could not find selected clip in memory. Please refresh.")?;
 
         'action_loop: loop {
-            println!();
+            let mut break_to_main_menu = false;
+
+            let clip = &mut all_clips[selected_idx];
 
             let mut options = Vec::new();
-            if selected_clip.is_hosted {
+            if clip.is_hosted {
                 options.push("⌂ Open URL");
                 options.push("☐ Copy URL");
             }
-            if selected_clip.local_path.is_some() {
+            if clip.local_path.is_some() {
                 options.push("▷ View Local File");
-                if !selected_clip.is_hosted {
+                if !clip.is_hosted {
                     options.push("✎ Rename");
                 }
                 options.push("✎ Edit");
                 options.push("⎘ Copy Name");
-                if selected_clip.local_data.as_ref().map_or(false, |d| d.liked) {
+                if clip.local_data.as_ref().map_or(false, |d| d.liked) {
                     options.push("♡ Unlike");
                 } else {
                     options.push("♥ Like");
                 }
             }
-            if !selected_clip.is_hosted && selected_clip.local_path.is_some() {
+            if !clip.is_hosted && clip.local_path.is_some() {
                 options.push("↗ Share");
             }
-            if selected_clip.is_hosted {
+            if clip.is_hosted {
                 options.push("⌫ Delete Server Copy");
             }
-            if selected_clip.local_path.is_some() {
+            if clip.local_path.is_some() {
                 options.push("⌫ Delete Local File");
             }
             options.push("← Back to Clip List");
 
-            let action = match Select::new(
-                &format!("Action for '{}':", selected_clip.name.cyan()),
-                options,
-            )
-            .prompt()
+            let action = match Select::new(&format!("Action for '{}':", clip.name.cyan()), options)
+                .prompt()
             {
                 Ok(choice) => choice,
                 Err(_) => break 'action_loop,
             };
 
             match action {
+                "← Back to Clip List" => break 'action_loop,
+
                 "▷ View Local File" => {
-                    if let Err(e) = handle_view(&selected_clip.full_filename, None).await {
-                        println!("{} {}", "Error viewing clip:".red(), e);
+                    if let Err(e) = handle_view(&clip.full_filename, None).await {
+                        println!("{} {}", "✗ Error viewing clip:".red(), e);
                     }
                 }
-                "← Back to Clip List" => {
-                    break 'action_loop;
-                }
-                "✎ Rename" => {
-                    if selected_clip.is_hosted {
-                        println!(
-                            "{}",
-                            "Cannot rename a clip that has been shared/hosted.".red()
-                        );
-                    } else {
-                        let local_path = selected_clip
-                            .local_path
-                            .as_ref()
-                            .context("No local path for rename")?;
-                        let new_name_input = Text::new("Enter new name (without extension):")
-                            .with_initial_value(&selected_clip.name)
-                            .prompt()?;
 
-                        match sanitize_and_validate_filename_stem(&new_name_input) {
-                            Ok(new_name_stem) => {
-                                if new_name_stem != selected_clip.name {
-                                    let extension = Path::new(local_path)
-                                        .extension()
-                                        .and_then(|s| s.to_str())
-                                        .unwrap_or("mp4");
-                                    let new_full_name = format!("{new_name_stem}.{extension}");
-                                    match rename_all_entries(local_path, &new_full_name).await {
-                                        Ok(_) => {
-                                            println!("✔ Renamed to '{}'", new_full_name.green())
-                                        }
-                                        Err(e) => {
-                                            println!("✗ Failed to rename: {}", e.to_string().red())
-                                        }
-                                    }
-                                    break 'action_loop;
-                                } else {
-                                    println!("{}", "Rename cancelled.".yellow());
-                                }
-                            }
-                            Err(e) => println!("✗ Invalid name: {}", e.to_string().red()),
-                        }
-                    }
-                }
-                "⌫ Delete Server Copy" | "⌫ Delete Local File" => {
-                    let confirm_msg = if action == "⌫ Delete Server Copy" {
-                        "Delete server copy?"
-                    } else {
-                        "Delete local file?"
-                    };
-                    let confirmed = Confirm::new(confirm_msg)
-                        .with_help_message("This cannot be undone.")
-                        .with_default(false)
-                        .prompt()?;
-
-                    if confirmed {
-                        let result: Result<()> = if action == "⌫ Delete Server Copy" {
-                            api::delete_clip(
-                                &api::get_api_client().await?,
-                                selected_clip.hosted_id.unwrap(),
-                            )
-                            .await
-                            .map_err(|e| anyhow::anyhow!(e))
-                        } else {
-                            delete_file(selected_clip.local_path.as_ref().unwrap())
-                                .await
-                                .map_err(|e| anyhow::anyhow!(e))
-                        };
-
-                        match result {
-                            Ok(_) => println!(
-                                "{}",
-                                "✔ Operation successful. Returning to main list.".green()
-                            ),
-                            Err(e) => println!("✗ Operation failed: {}", e.to_string().red()),
-                        }
-                        break 'action_loop;
-                    }
-                }
-                "⌂ Open URL" => {
-                    opener::open(format!(
-                        "{}/clip/{}",
-                        settings.api_url,
-                        selected_clip.hosted_id.unwrap()
-                    ))?;
-                    println!("Opening URL in browser...");
-                }
-                "✎ Edit" => {
-                    let start_time_input =
-                        Text::new("Enter start time (e.g., 00:00:05 or 5):").prompt()?;
-                    let end_time_input =
-                        Text::new("Enter end time (e.g., 00:00:10 or 10):").prompt()?;
-
-                    match (
-                        validate_ffmpeg_time(&start_time_input),
-                        validate_ffmpeg_time(&end_time_input),
-                    ) {
-                        (Ok(start_time), Ok(end_time)) => {
-                            let disable_audio = Confirm::new("Disable audio?")
-                                .with_default(false)
-                                .prompt()?;
-                            if let Err(e) = handle_edit(
-                                &selected_clip.full_filename,
-                                &start_time,
-                                &end_time,
-                                &disable_audio,
-                            )
-                            .await
-                            {
-                                println!("{} {}", "✗ Edit failed:".red(), e);
-                            }
-                        }
-                        (Err(e), _) | (_, Err(e)) => {
-                            println!("{} {}", "✗ Invalid time format:".red(), e)
-                        }
-                    }
-                }
-                "⎘ Copy Name" => match copy_to_clipboard(&selected_clip.name).await {
-                    Ok(_) => println!("{}", "✔ Name copied to clipboard!".green()),
-                    Err(e) => println!("{}", format!("✗ Failed to copy name: {e}").red()),
-                },
                 "♥ Like" | "♡ Unlike" => {
-                    let new_liked_status =
-                        !selected_clip.local_data.as_ref().map_or(false, |d| d.liked);
-                    match update_liked(&selected_clip.full_filename, new_liked_status).await {
-                        Ok(_) => println!("{}", "✔ Liked status updated!".green()),
+                    let new_status = !clip.local_data.as_ref().map_or(false, |d| d.liked);
+                    match update_liked(&clip.full_filename, new_status).await {
+                        Ok(_) => {
+                            if let Some(local_data) = clip.local_data.as_mut() {
+                                local_data.liked = new_status;
+                            }
+                            println!("{}", "✔ Liked status updated!".green());
+                        }
                         Err(e) => {
                             println!("{}", format!("✗ Failed to update liked status: {e}").red())
                         }
                     }
                 }
-                "↗ Share" => {
-                    if let Err(e) = handle_share(&selected_clip.name).await {
-                        println!("{} {}", "✗ Share failed:".red(), e);
+
+                "⌫ Delete Server Copy" | "⌫ Delete Local File" => {
+                    let is_server = action == "⌫ Delete Server Copy";
+                    let confirmed = Confirm::new(if is_server {
+                        "Delete server copy?"
+                    } else {
+                        "Delete local file?"
+                    })
+                    .with_help_message("This cannot be undone.")
+                    .with_default(false)
+                    .prompt()?;
+
+                    if confirmed {
+                        let result: Result<()> = if is_server {
+                            let client = api::get_api_client().await?;
+                            api::delete_clip(&client, clip.hosted_id.unwrap())
+                                .await
+                                .map_err(|e| anyhow!(e))
+                        } else {
+                            delete_file(clip.local_path.as_ref().unwrap())
+                                .await
+                                .map_err(|e| anyhow!(e))
+                        };
+
+                        match result {
+                            Ok(_) => {
+                                println!("{}", "✔ Operation successful.".green());
+                                all_clips.remove(selected_idx);
+                                break_to_main_menu = true;
+                            }
+                            Err(e) => println!("✗ Operation failed: {}", e.to_string().red()),
+                        }
                     }
                 }
+
+                "⌂ Open URL" => {
+                    let url = format!("{}/clip/{}", settings.api_url, clip.hosted_id.unwrap());
+                    if opener::open(&url).is_ok() {
+                        println!("○ Opening URL in browser: {}", url.cyan());
+                    } else {
+                        println!("✗ Failed to open URL.");
+                    }
+                }
+
                 "☐ Copy URL" => {
-                    if let Some(id) = selected_clip.hosted_id {
-                        let public_url = format!("{}/clip/{}", settings.api_url, id);
-                        match copy_to_clipboard(&public_url).await {
-                            Ok(_) => println!(
-                                "✔ Public URL copied to clipboard: {}",
-                                public_url.underline().green()
-                            ),
-                            Err(e) => println!("{}", format!("✗ Failed to copy URL: {e}").red()),
+                    let public_url =
+                        format!("{}/clip/{}", settings.api_url, clip.hosted_id.unwrap());
+                    match copy_to_clipboard(&public_url).await {
+                        Ok(_) => println!("{}", "✔ Public URL copied!".green()),
+                        Err(e) => println!("{}", format!("✗ Failed to copy URL: {e}").red()),
+                    }
+                }
+
+                "⎘ Copy Name" => match copy_to_clipboard(&clip.name).await {
+                    Ok(_) => println!("{}", "✔ Name copied!".green()),
+                    Err(e) => println!("{}", format!("✗ Failed to copy name: {e}").red()),
+                },
+
+                "↗ Share" => {
+                    if let Err(e) = handle_share(&clip.name).await {
+                        println!("{} {}", "✗ Share failed:".red(), e);
+                    } else {
+                        println!("{}", "◌ Refreshing clip state...".yellow());
+                        if let Some(updated_clip) = gather_unified_clips()
+                            .await?
+                            .into_iter()
+                            .find(|c| c.name == clip.name)
+                        {
+                            *clip = updated_clip;
                         }
+                        println!("{}", "✔ Clip is now hosted.".green());
+                    }
+                }
+
+                "✎ Rename" => {
+                    let local_path_str = clip.local_path.as_ref().context("No local path")?.clone();
+                    let new_name_input = Text::new("› Enter new name:")
+                        .with_initial_value(&clip.name)
+                        .prompt()?;
+
+                    match sanitize_and_validate_filename_stem(&new_name_input) {
+                        Ok(new_stem) if new_stem != clip.name => {
+                            let ext = Path::new(&local_path_str)
+                                .extension()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("mp4");
+                            let new_full = format!("{new_stem}.{ext}");
+                            match rename_all_entries(&local_path_str, &new_full).await {
+                                Ok(_) => {
+                                    println!("✔ Renamed to '{}'", new_full.green());
+                                    println!("{}", "◌ Refreshing clip list...".yellow());
+                                    all_clips = gather_unified_clips().await?;
+                                    break_to_main_menu = true;
+                                }
+                                Err(e) => println!("✗ Failed to rename: {}", e.to_string().red()),
+                            }
+                        }
+                        Ok(_) => println!("{}", "○ Rename cancelled.".yellow()),
+                        Err(e) => println!("✗ Invalid name: {}", e.to_string().red()),
+                    }
+                }
+
+                "✎ Edit" => {
+                    let start_time =
+                        Text::new("› Enter start time (e.g., 5.5 or 00:01:30):").prompt()?;
+                    let end_time =
+                        Text::new("› Enter end time (e.g., 10 or 00:02:00):").prompt()?;
+                    let disable_audio = Confirm::new("Disable audio?")
+                        .with_default(false)
+                        .prompt()?;
+
+                    if let Err(e) =
+                        handle_edit(&clip.full_filename, &start_time, &end_time, &disable_audio)
+                            .await
+                    {
+                        println!("{} {}", "✗ Edit failed:".red(), e);
+                    } else {
+                        println!("{}", "◌ Refreshing clip list...".yellow());
+                        all_clips = gather_unified_clips().await?;
+                        break_to_main_menu = true;
                     }
                 }
                 _ => {}
             }
 
-            if let Some(updated_clip) = find_clip_by_name(&selected_clip.name).await? {
-                selected_clip = updated_clip;
-            } else {
-                println!(
-                    "{}",
-                    "\nClip data has changed, returning to main list.".yellow()
-                );
+            if break_to_main_menu {
                 break 'action_loop;
             }
         }
     }
-
     Ok(())
 }
