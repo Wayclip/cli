@@ -5187,7 +5187,7 @@ dependencies = [
 
 [[package]]
 name = "wayclip-cli"
-version = "0.1.66"
+version = "0.1.69"
 dependencies = [
  "anyhow",
  "arboard",

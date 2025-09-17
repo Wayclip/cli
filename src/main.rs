@@ -445,24 +445,9 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         return Ok(());
     }
 
-    let profile = api::get_current_user().await?;
-    let file_size = tokio::fs::metadata(&clip_path).await?.len() as i64;
-    let available_storage = profile.storage_limit - profile.storage_used;
-
-    if file_size > available_storage {
-        bail!(
-            "Upload rejected: File size ({:.2} MB) exceeds your available storage ({:.2} MB).",
-            file_size as f64 / 1_048_576.0,
-            available_storage as f64 / 1_048_576.0
-        );
-    }
-
-    println!(
-        "{}",
-        "◌ Uploading clip... (this may take a moment)".yellow()
-    );
+    println!("{}", "◌ Initializing upload...".yellow());
     let client = api::get_api_client().await?;
-    match api::share_clip(&client, &clip_path).await {
+    match api::share_clip(&client, clip_path).await {
         Ok(url) => {
             println!("{}", "✔ Clip shared successfully!".green().bold());
             println!("  Public URL: {}", url.underline());
