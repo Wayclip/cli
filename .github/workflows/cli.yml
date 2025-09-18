@@ -117,12 +117,31 @@ jobs:
           arch=('x86_64')
           url="https://github.com/Wayclip/cli"
           license=('MIT')
-          depends=('pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'dbus' 'libxcb')
-          makedepends=('rust' 'cargo')
-          _core_ver="@CORE_TAG@"
-          source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz"
-                  "wayclip-core-binaries.tar.gz::https://github.com/Wayclip/core/releases/download/${_core_ver}/wayclip-${_core_ver}-x86_64-unknown-linux-gnu.tar.gz")
-          sha256sums=('SKIP' 'SKIP')
+          depends=('pipewire' 'wayland' 'alsa-lib' 'ffmpeg' 'gstreamer' 'gst-plugins-base' 'dbus' 'libxcb' 'jq')
+          makedepends=('rust' 'cargo' 'curl')
+          source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz")
+          sha256sums=('SKIP')
+
+          prepare() {
+            cd "$srcdir"
+            
+            echo "Fetching the latest core release information from GitHub..."
+            local core_api_url="https://api.github.com/repos/Wayclip/core/releases/latest"
+            
+            local core_release_data=$(curl -s "$core_api_url")
+            _core_ver=$(echo "$core_release_data" | jq -r '.tag_name')
+            local core_download_url=$(echo "$core_release_data" | jq -r --arg ver "$_core_ver" '.assets[] | select(.name == "wayclip-\($ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+
+            if [ -z "$_core_ver" ] || [ "$_core_ver" == "null" ] || [ -z "$core_download_url" ] || [ "$core_download_url" == "null" ]; then
+              echo "::error::Could not determine the latest core release tag or download URL."
+              exit 1
+            fi
+            
+            echo "Downloading core binaries version ${_core_ver} from ${core_download_url}..."
+            curl -L -o "wayclip-core-binaries.tar.gz" "$core_download_url"
+            
+            tar -xzf "wayclip-core-binaries.tar.gz"
+          }
 
           build() {
             cd "$srcdir/cli-$pkgver"
@@ -141,7 +160,7 @@ jobs:
             fi
           }
           PKG
-          sed -e "s|@PKG_VER@|${PKG_VER}|g" -e "s|@CORE_TAG@|${CORE_TAG_FULL}|g" PKGBUILD.in > PKGBUILD
+          sed -e "s|@PKG_VER@|${PKG_VER}|g" PKGBUILD.in > PKGBUILD
           rm PKGBUILD.in
           mv PKGBUILD release_assets/
 
