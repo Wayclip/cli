@@ -155,7 +155,7 @@ jobs:
           name: release-assets
           path: release_assets
       - name: Install Debian Packaging Tools
-        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential
+        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential debhelper
       - name: Prepare Debian Packaging Directory
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
