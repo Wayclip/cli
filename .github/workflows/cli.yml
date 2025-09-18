@@ -1,47 +1,33 @@
-name: Wayclip CLI publish to AUR and Release AppImage
+name: Wayclip Release Pipeline
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-
   workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+    outputs:
+      pkg_ver: ${{ env.PKG_VER }}
     steps:
       - name: Set Environment from Trigger
-        id: set_env
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "Triggered by push tag: ${{ github.ref_name }}"
             CLI_VERSION_TAG="${{ github.ref_name }}"
           else
-            echo "Triggered by '${{ github.event_name }}'. Finding latest CLI release tag."
             CLI_VERSION_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.tag_name')
             if [[ -z "$CLI_VERSION_TAG" || "$CLI_VERSION_TAG" == "null" ]]; then
               echo "::error::Could not determine the latest CLI release tag."
               exit 1
             fi
-            echo "Found latest CLI release tag to rebuild: $CLI_VERSION_TAG"
           fi
-
-          echo "Fetching latest core release tag..."
-          CORE_TAG=$(curl -s "https://api.github.com/repos/Wayclip/core/releases/latest" | jq -r '.tag_name')
-          if [[ -z "$CORE_TAG" || "$CORE_TAG" == "null" ]]; then
-            echo "::error::Could not determine the latest core release tag."
-            exit 1
-          fi
-          echo "Found latest core release tag: $CORE_TAG"
-
-          echo "PKG_VER=${CLI_VERSION_TAG#refs/tags/v}" >> $GITHUB_ENV
+          echo "Found CLI tag: $CLI_VERSION_TAG"
+          echo "PKG_VER=${CLI_VERSION_TAG#v}" >> $GITHUB_ENV
           echo "CLI_TAG_REF=${CLI_VERSION_TAG}" >> $GITHUB_ENV
-          echo "CORE_TAG_FULL=${CORE_TAG}" >> $GITHUB_ENV
 
-      - name: Checkout CLI repository at correct tag
+      - name: Checkout CLI repository
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CLI_TAG_REF }}
@@ -49,8 +35,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
       - name: Install build dependencies
         run: |
@@ -63,22 +47,23 @@ jobs:
             libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libx11-dev libasound2-dev libfuse2 wget jq bsdmainutils
 
-      - name: Download and Extract Core Binaries
+      - name: Download and Extract Latest Core Binaries
         run: |
-          mkdir core-binaries
-          CORE_ASSET_URL="https://github.com/Wayclip/core/releases/download/${{ env.CORE_TAG_FULL }}/wayclip-${{ env.CORE_TAG_FULL }}-x86_64-unknown-linux-gnu.tar.gz"
-          echo "Downloading core binaries from ${CORE_ASSET_URL}"
+          mkdir core-binaries release_assets
+          CORE_API_URL="https://api.github.com/repos/Wayclip/core/releases/latest"
+          CORE_RELEASE_DATA=$(curl -s "$CORE_API_URL")
+          CORE_TAG=$(echo "$CORE_RELEASE_DATA" | jq -r '.tag_name')
+          CORE_ASSET_URL=$(echo "$CORE_RELEASE_DATA" | jq -r --arg ver "$CORE_TAG" '.assets[] | select(.name == "wayclip-\($ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+
+          echo "Downloading core binaries version ${CORE_TAG} from ${CORE_ASSET_URL}"
           wget -q -O core-binaries.tar.gz "${CORE_ASSET_URL}"
           tar -xzf core-binaries.tar.gz -C core-binaries
-          echo "Extracted core binaries:"
-          ls -lR core-binaries
 
       - name: Build the CLI binary
         run: cd cli && cargo build --release
 
       - name: Prepare Release Assets
         run: |
-          mkdir release_assets
           cp cli/target/release/wayclip-cli release_assets/wayclip-cli-x86_64-unknown-linux-gnu
           cp core-binaries/wayclip-binaries/daemon release_assets/wayclip-daemon
           cp core-binaries/wayclip-binaries/trigger release_assets/wayclip-trigger
@@ -96,22 +81,17 @@ jobs:
           cp release_assets/wayclip-daemon.service AppDir/usr/lib/systemd/user/
           sed -i 's|ExecStart=.*|ExecStart=%h/.local/bin/wayclip-daemon|' AppDir/usr/lib/systemd/user/wayclip-daemon.service
           chmod +x AppDir/usr/bin/*
-          cat <<'EOF' > AppDir/AppRun
-          #!/bin/sh
-          exec "$APPDIR/usr/bin/wayclip-cli" "$@"
-          EOF
-          chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir
+          ./appimagetool-x86_64.AppImage AppDir
           mv Wayclip_CLI-x86_64.AppImage release_assets/wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
 
       - name: Generate correct PKGBUILD for AUR
         run: |
-          cat <<'PKG' > PKGBUILD.in
+          cat <<'PKG' > release_assets/PKGBUILD
           # Maintainer: konyogony <dev@wayclip.com>
           pkgname=wayclip-cli
-          pkgver=@PKG_VER@
+          pkgver=${{ env.PKG_VER }}
           pkgrel=1
           pkgdesc="The CLI interface for Wayclip, an instant replay tool built for the Linux community."
           arch=('x86_64')
@@ -121,70 +101,110 @@ jobs:
           makedepends=('rust' 'cargo' 'curl')
           source=("$pkgname-$pkgver.tar.gz::https://github.com/Wayclip/cli/archive/refs/tags/v$pkgver.tar.gz")
           sha256sums=('SKIP')
-
           prepare() {
-            cd "$srcdir"
-            
+            cd "\$srcdir"
             echo "Fetching the latest core release information from GitHub..."
             local core_api_url="https://api.github.com/repos/Wayclip/core/releases/latest"
-            
-            local core_release_data=$(curl -s "$core_api_url")
-            _core_ver=$(echo "$core_release_data" | jq -r '.tag_name')
-            local core_download_url=$(echo "$core_release_data" | jq -r --arg ver "$_core_ver" '.assets[] | select(.name == "wayclip-\($ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
-
-            if [ -z "$_core_ver" ] || [ "$_core_ver" == "null" ] || [ -z "$core_download_url" ] || [ "$core_download_url" == "null" ]; then
+            local core_release_data=\$(curl -s "\$core_api_url")
+            _core_ver=\$(echo "\$core_release_data" | jq -r '.tag_name')
+            local core_download_url=\$(echo "\$core_release_data" | jq -r --arg ver "\$_core_ver" '.assets[] | select(.name == "wayclip-\(\$ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+            if [ -z "\$_core_ver" ] || [ "\$_core_ver" == "null" ] || [ -z "\$core_download_url" ] || [ "\$core_download_url" == "null" ]; then
               echo "::error::Could not determine the latest core release tag or download URL."
               exit 1
             fi
-            
-            echo "Downloading core binaries version ${_core_ver} from ${core_download_url}..."
-            curl -L -o "wayclip-core-binaries.tar.gz" "$core_download_url"
-            
+            echo "Downloading core binaries version \${_core_ver} from \${core_download_url}..."
+            curl -L -o "wayclip-core-binaries.tar.gz" "\$core_download_url"
             tar -xzf "wayclip-core-binaries.tar.gz"
           }
-
           build() {
-            cd "$srcdir/cli-$pkgver"
+            cd "\$srcdir/cli-\$pkgver"
             cargo build --release
           }
-
           package() {
-            install -Dm755 "$srcdir/cli-$pkgver/target/release/wayclip-cli" "$pkgdir/usr/bin/wayclip-cli"
-            
-            install -Dm755 "$srcdir/wayclip-binaries/daemon" "$pkgdir/usr/bin/wayclip-daemon"
-            install -Dm755 "$srcdir/wayclip-binaries/trigger" "$pkgdir/usr/bin/wayclip-trigger"
-            
-            if [ -f "$srcdir/cli-$pkgver/assets/wayclip-daemon.service" ]; then
-              sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "$srcdir/cli-$pkgver/assets/wayclip-daemon.service"
-              install -Dm644 "$srcdir/cli-$pkgver/assets/wayclip-daemon.service" "$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
+            install -Dm755 "\$srcdir/cli-\$pkgver/target/release/wayclip-cli" "\$pkgdir/usr/bin/wayclip-cli"
+            install -Dm755 "\$srcdir/wayclip-binaries/daemon" "\$pkgdir/usr/bin/wayclip-daemon"
+            install -Dm755 "\$srcdir/wayclip-binaries/trigger" "\$pkgdir/usr/bin/wayclip-trigger"
+            if [ -f "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" ]; then
+              sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service"
+              install -Dm644 "\$srcdir/cli-\$pkgver/assets/wayclip-daemon.service" "\$pkgdir/usr/lib/systemd/user/wayclip-daemon.service"
             fi
           }
           PKG
-          sed -e "s|@PKG_VER@|${PKG_VER}|g" PKGBUILD.in > PKGBUILD
-          rm PKGBUILD.in
-          mv PKGBUILD release_assets/
 
-      - name: Upload artifacts for deploy job
+      - name: Upload common assets
         uses: actions/upload-artifact@v4
         with:
           name: release-assets
           path: release_assets/
 
-  deploy:
+  build-deb:
     runs-on: ubuntu-22.04
-    needs: build-and-release
-    permissions:
-      contents: write
+    needs: build
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: release-assets
-
-      - name: Set Environment from downloaded artifacts
+          path: release_assets
+      - name: Install Debian Packaging Tools
+        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential
+      - name: Prepare Debian Packaging Directory
         run: |
-          echo "PKG_VER=$(grep -oP 'pkgver=\K.*' PKGBUILD)" >> $GITHUB_ENV
-          echo "CORE_TAG_FULL=$(grep -oP '_core_ver=\K.*' PKGBUILD)" >> $GITHUB_ENV
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          mkdir -p deb_build/wayclip-cli-${PKG_VER}/debian
+          mkdir -p deb_build/wayclip-cli-${PKG_VER}/usr/bin
+          cp release_assets/wayclip-cli-x86_64-unknown-linux-gnu deb_build/wayclip-cli-${PKG_VER}/usr/bin/wayclip-cli
+          cp release_assets/wayclip-daemon deb_build/wayclip-cli-${PKG_VER}/usr/bin/wayclip-daemon
+          cp release_assets/wayclip-trigger deb_build/wayclip-cli-${PKG_VER}/usr/bin/wayclip-trigger
+          mkdir -p deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user
+          cp release_assets/wayclip-daemon.service deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user/
+          sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user/wayclip-daemon.service
+      - name: Create debian/control file
+        run: |
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          cat <<EOF > deb_build/wayclip-cli-${PKG_VER}/debian/control
+          Source: wayclip-cli
+          Section: utils
+          Priority: optional
+          Maintainer: konyogony <dev@wayclip.com>
+          Build-Depends: debhelper-compat (= 13)
+          Standards-Version: 4.5.0
+          Package: wayclip-cli
+          Architecture: amd64
+          Depends: \${shlibs:Depends}, \${misc:Depends}, pipewire, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-vaapi, gstreamer1.0-libav, libglib2.0-0, libssl3, libpq5, libssh2-1, libwayland-client0, libxkbcommon0, libdbus-1-3, libunwind8, libgstreamer1.0-0, libx11-6, libasound2, fuse
+          Description: The CLI interface for Wayclip
+           An instant replay tool built for the Linux community. Wayclip allows
+           you to capture and save the last moments of your screen activity.
+          EOF
+      - name: Create debian/changelog and debian/rules
+        run: |
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          cd deb_build/wayclip-cli-${PKG_VER}
+          dch --create -v ${PKG_VER}-1 --package wayclip-cli "New release v${PKG_VER}."
+          cat <<EOF > debian/rules
+          #!/usr/bin/make -f
+          %:
+          	dh \$@
+          EOF
+          chmod +x debian/rules
+          echo 13 > debian/compat
+      - name: Build the .deb package
+        run: |
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          cd deb_build/wayclip-cli-${PKG_VER}/
+          dpkg-buildpackage -us -uc -b
+      - name: Upload debian package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: deb_build/*.deb
 
+  publish-aur:
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
@@ -193,17 +213,28 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to v${{ env.PKG_VER }} (core: ${{ env.CORE_TAG_FULL }})"
+          commit_message: "Update to v${{ needs.build.outputs.pkg_ver }}"
 
-      - name: Upload Assets to GitHub Release
-        if: github.event_name == 'push'
+  publish-release:
+    runs-on: ubuntu-22.04
+    needs: [build, build-deb]
+    if: github.event_name == 'push'
+    steps:
+      - name: Download common assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release_assets
+      - name: Download debian package
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: release_assets
+      - name: Display release contents
+        run: ls -lR release_assets
+      - name: Upload All Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            wayclip-cli-${{ env.PKG_VER }}-x86_64.AppImage
-            wayclip-cli-x86_64-unknown-linux-gnu
-            wayclip-daemon
-            wayclip-trigger
-            wayclip-daemon.service
+          files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
