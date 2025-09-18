@@ -167,7 +167,7 @@ jobs:
           Priority: optional
           Maintainer: konyogony <dev@wayclip.com>
           Build-Depends: debhelper-compat (= 13)
-          Standards-Version: 4.5.0
+          Standards-Version: 4.6.2
           Package: wayclip-cli
           Architecture: amd64
           Depends: \${shlibs:Depends}, \${misc:Depends}, pipewire, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-vaapi, gstreamer1.0-libav, libglib2.0-0, libssl3, libpq5, libssh2-1, libwayland-client0, libxkbcommon0, libdbus-1-3, libunwind8, libgstreamer1.0-0, libx11-6, libasound2, fuse
@@ -179,6 +179,8 @@ jobs:
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
           cd deb_build/wayclip-cli-${PKG_VER}
+          export DEBEMAIL="dev@wayclip.com"
+          export DEBFULLNAME="Wayclip CI"
           dch --create -v ${PKG_VER}-1 --package wayclip-cli "New release v${PKG_VER}."
           cat <<EOF > debian/rules
           #!/usr/bin/make -f
@@ -205,6 +207,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: release-assets
+      - name: Verify downloaded assets for AUR
+        run: ls -l
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
@@ -220,21 +224,15 @@ jobs:
     needs: [build, build-deb]
     if: github.event_name == 'push'
     steps:
-      - name: Download common assets
+      - name: Download all assets
         uses: actions/download-artifact@v4
         with:
-          name: release-assets
-          path: release_assets
-      - name: Download debian package
-        uses: actions/download-artifact@v4
-        with:
-          name: deb-package
           path: release_assets
       - name: Display release contents
         run: ls -lR release_assets
       - name: Upload All Assets to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release_assets/*
+          files: release_assets/**/*.*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}```
