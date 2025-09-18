@@ -198,7 +198,6 @@ jobs:
           	dh \$@
           EOF
           chmod +x debian/rules
-          echo 13 > debian/compat
       - name: Build the .deb package
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
