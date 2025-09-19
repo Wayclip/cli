@@ -152,17 +152,40 @@ jobs:
         with:
           name: release-assets
           path: release_assets
+
       - name: Install Debian Packaging Tools
-        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential debhelper
+        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential debhelper curl jq
+
+      - name: Download and Extract Latest Core Binaries
+        run: |
+          mkdir core-binaries
+          CORE_API_URL="https://api.github.com/repos/Wayclip/core/releases/latest"
+          CORE_RELEASE_DATA=$(curl -s "$CORE_API_URL")
+          CORE_TAG=$(echo "$CORE_RELEASE_DATA" | jq -r '.tag_name')
+          CORE_ASSET_URL=$(echo "$CORE_RELEASE_DATA" | jq -r --arg ver "$CORE_TAG" '.assets[] | select(.name == "wayclip-\($ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
+          if [ -z "$CORE_ASSET_URL" ] || [ "$CORE_ASSET_URL" == "null" ]; then
+            echo "::error::Could not find latest core binaries to download from Wayclip/core."
+            exit 1
+          fi
+          echo "Downloading core binaries version ${CORE_TAG} from ${CORE_ASSET_URL}"
+          curl -L -o core-binaries.tar.gz "${CORE_ASSET_URL}"
+          tar -xzf core-binaries.tar.gz -C core-binaries
+
       - name: Prepare Debian Packaging Directory
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
-          mkdir -p deb_build/wayclip-cli-${PKG_VER}/debian
-          mkdir -p deb_build/wayclip-cli-${PKG_VER}/usr/bin
-          mkdir -p deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user
-          cp release_assets/wayclip-cli-x86_64-unknown-linux-gnu deb_build/wayclip-cli-${PKG_VER}/usr/bin/wayclip-cli
-          cp release_assets/wayclip-daemon.service deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user/
-          sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' deb_build/wayclip-cli-${PKG_VER}/usr/lib/systemd/user/wayclip-daemon.service
+          DEB_DIR="deb_build/wayclip-cli-${PKG_VER}"
+          mkdir -p "${DEB_DIR}/debian"
+          mkdir -p "${DEB_DIR}/usr/bin"
+          mkdir -p "${DEB_DIR}/usr/lib/systemd/user"
+
+          cp release_assets/wayclip-cli-x86_64-unknown-linux-gnu "${DEB_DIR}/usr/bin/wayclip-cli"
+          cp core-binaries/wayclip-binaries/daemon "${DEB_DIR}/usr/bin/wayclip-daemon"
+          cp core-binaries/wayclip-binaries/trigger "${DEB_DIR}/usr/bin/wayclip-trigger"
+          cp release_assets/wayclip-daemon.service "${DEB_DIR}/usr/lib/systemd/user/"
+
+          sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "${DEB_DIR}/usr/lib/systemd/user/wayclip-daemon.service"
+
       - name: Create debian/control file
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
@@ -176,42 +199,12 @@ jobs:
 
           Package: wayclip-cli
           Architecture: amd64
-          Depends: \${shlibs:Depends}, \${misc:Depends}, pipewire, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-vaapi, gstreamer1.0-libav, libglib2.0-0, libssl3, libpq5, libssh2-1, libwayland-client0, libxkbcommon0, libdbus-1-3, libunwind8, libgstreamer1.0-0, libx11-6, libasound2, fuse, curl, jq
+          Depends: \${shlibs:Depends}, \${misc:Depends}, pipewire, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-vaapi, gstreamer1.0-libav, libglib2.0-0, libssl3, libpq5, libssh2-1, libwayland-client0, libxkbcommon0, libdbus-1-3, libunwind8, libgstreamer1.0-0, libx11-6, libasound2, fuse
           Description: The CLI interface for Wayclip
            An instant replay tool built for the Linux community. Wayclip allows
            you to capture and save the last moments of your screen activity.
           EOF
-      - name: Create debian/postinst script
-        run: |
-          PKG_VER=${{ needs.build.outputs.pkg_ver }}
-          cat <<'EOF' > deb_build/wayclip-cli-${PKG_VER}/debian/postinst
-          #!/bin/sh
-          set -e
-          if [ "\$1" = "configure" ]; then
-              echo "Wayclip post-installation: Fetching latest core binaries..."
-              CORE_API_URL="https://api.github.com/repos/Wayclip/core/releases/latest"
-              CORE_RELEASE_DATA=\$(curl -s "\$CORE_API_URL")
-              if [ -z "\$CORE_RELEASE_DATA" ]; then
-                  echo "Error: Failed to fetch release data from GitHub." >&2; exit 1
-              fi
-              CORE_TAG=\$(echo "\$CORE_RELEASE_DATA" | jq -r '.tag_name')
-              CORE_ASSET_URL=\$(echo "\$CORE_RELEASE_DATA" | jq -r --arg ver "\$CORE_TAG" '.assets[] | select(.name == "wayclip-\($ver)-x86_64-unknown-linux-gnu.tar.gz") | .browser_download_url')
-              if [ -z "\$CORE_TAG" ] || [ "\$CORE_TAG" = "null" ] || [ -z "\$CORE_ASSET_URL" ] || [ "\$CORE_ASSET_URL" = "null" ]; then
-                  echo "Error: Could not find latest core binaries to download from Wayclip/core." >&2; exit 1
-              fi
-              TMP_DIR=\$(mktemp -d)
-              echo "Downloading core version \${CORE_TAG}..."
-              curl -L -o "\$TMP_DIR/core.tar.gz" "\$CORE_ASSET_URL"
-              tar -xzf "\$TMP_DIR/core.tar.gz" -C "\$TMP_DIR"
-              echo "Installing daemon and trigger to /usr/bin..."
-              install -Dm755 "\$TMP_DIR/wayclip-binaries/daemon" "/usr/bin/wayclip-daemon"
-              install -Dm755 "\$TMP_DIR/wayclip-binaries/trigger" "/usr/bin/wayclip-trigger"
-              rm -rf "\$TMP_DIR"
-              echo "Core binaries installed successfully."
-          fi
-          exit 0
-          EOF
-          chmod +x deb_build/wayclip-cli-${PKG_VER}/debian/postinst
+
       - name: Create debian/changelog and debian/rules
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
@@ -225,11 +218,13 @@ jobs:
           	dh \$@
           EOF
           chmod +x debian/rules
+
       - name: Build the .deb package
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
           cd deb_build/wayclip-cli-${PKG_VER}/
           dpkg-buildpackage -us -uc -b
+
       - name: Upload debian package artifact
         uses: actions/upload-artifact@v4
         with:
