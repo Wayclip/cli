@@ -5276,7 +5276,7 @@ dependencies = [
 
 [[package]]
 name = "wayclip-cli"
-version = "0.1.78"
+version = "0.1.81"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5300,9 +5300,9 @@ dependencies = [
 
 [[package]]
 name = "wayclip_core"
-version = "0.1.22"
+version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e409310c5e54bf092a9cfd94dc63687c03d1aeda804c19142596bb81d96accb"
+checksum = "04fb12af829271956902b412dcc6a2e22c26eb0093ba0d833ee1a00d61c7c58a"
 dependencies = [
  "anyhow",
  "ashpd",

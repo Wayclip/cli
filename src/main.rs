@@ -108,6 +108,7 @@ pub enum DaemonCommand {
     Stop,
     Restart,
     Status,
+    Logs,
 }
 
 #[derive(Subcommand)]
@@ -215,6 +216,7 @@ async fn run() -> Result<()> {
                 DaemonCommand::Start => manager.start().await?,
                 DaemonCommand::Stop => manager.stop().await?,
                 DaemonCommand::Restart => manager.restart().await?,
+                DaemonCommand::Logs => manager.logs().await?,
                 DaemonCommand::Status => {
                     manager.status().await?;
                 }
