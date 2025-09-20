@@ -12,6 +12,7 @@ use std::process::ExitCode;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use uuid::Uuid;
 use wayclip_core::control::DaemonManager;
 use wayclip_core::{api, delete_file, gather_unified_clips, rename_all_entries, update_liked};
 use wayclip_core::{models::UnifiedClipData, settings::Settings};
@@ -436,7 +437,7 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         .context(format!("Clip '{}' not found locally.", clip.name))?;
     let clip_path = Path::new(&clip_path_str);
 
-    let confirmed = Confirm::new("Sharing associates the local file with a hosted version by name. After sharing, you will not be able to rename the local file. Continue?")
+    let confirmed = Confirm::new("Are you sure you want to share this clip?")
         .with_default(true)
         .prompt()?;
 
@@ -451,6 +452,20 @@ async fn handle_share(clip_name: &str) -> Result<()> {
         Ok(url) => {
             println!("{}", "✔ Clip shared successfully!".green().bold());
             println!("  Public URL: {}", url.underline());
+
+            let clip_id_str = url
+                .split('/')
+                .last()
+                .context("Could not parse clip ID from URL")?;
+            let clip_id = Uuid::parse_str(clip_id_str)?;
+
+            let full_filename = clip_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .context("Invalid filename")?;
+            wayclip_core::update_hosted_id(full_filename, clip_id)
+                .await
+                .context("Failed to save hosted ID to local data file")?;
 
             match copy_to_clipboard(&url).await {
                 Ok(_) => println!("{}", "✔ URL automatically copied to clipboard!".green()),
@@ -553,10 +568,6 @@ async fn handle_view(name: &str, player: Option<&str>) -> Result<()> {
 
 async fn handle_rename(name: &str) -> Result<()> {
     let clip_to_rename = find_unified_clip(name).await?;
-
-    if clip_to_rename.is_hosted {
-        bail!("Cannot rename a hosted clip. The name is locked after sharing.");
-    }
 
     let clip_path_str = clip_to_rename
         .local_path

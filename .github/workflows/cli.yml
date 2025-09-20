@@ -185,6 +185,18 @@ jobs:
           cp release_assets/wayclip-daemon.service "${DEB_DIR}/usr/lib/systemd/user/"
 
           sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "${DEB_DIR}/usr/lib/systemd/user/wayclip-daemon.service"
+          chmod +x "${DEB_DIR}"/usr/bin/*
+
+      - name: Create debian/install file
+        run: |
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          DEB_DIR="deb_build/wayclip-cli-${PKG_VER}"
+          cat <<EOF > "${DEB_DIR}/debian/install"
+          usr/bin/wayclip-cli /usr/bin
+          usr/bin/wayclip-daemon /usr/bin
+          usr/bin/wayclip-trigger /usr/bin
+          usr/lib/systemd/user/wayclip-daemon.service /usr/lib/systemd/user
+          EOF
 
       - name: Create debian/control file
         run: |

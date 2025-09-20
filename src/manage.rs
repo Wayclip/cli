@@ -147,9 +147,7 @@ pub async fn handle_manage() -> Result<()> {
             }
             if clip.local_path.is_some() {
                 options.push("▷ View Local File");
-                if !clip.is_hosted {
-                    options.push("✎ Rename");
-                }
+                options.push("✎ Rename");
                 options.push("✎ Edit");
                 options.push("⎘ Copy Name");
                 if clip.local_data.as_ref().map_or(false, |d| d.liked) {
