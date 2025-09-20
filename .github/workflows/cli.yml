@@ -154,7 +154,11 @@ jobs:
           path: release_assets
 
       - name: Install Debian Packaging Tools
-        run: sudo apt-get update && sudo apt-get install -y devscripts build-essential debhelper curl jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts build-essential debhelper curl jq \
+            libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-vaapi gstreamer1.0-libav
 
       - name: Download and Extract Latest Core Binaries
         run: |
@@ -185,7 +189,13 @@ jobs:
           cp release_assets/wayclip-daemon.service "${DEB_DIR}/usr/lib/systemd/user/"
 
           sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "${DEB_DIR}/usr/lib/systemd/user/wayclip-daemon.service"
-          chmod +x "${DEB_DIR}"/usr/bin/*
+          chmod +x "${DEB_DIR}/usr/bin/"*
+
+      - name: Create debian/compat file
+        run: |
+          PKG_VER=${{ needs.build.outputs.pkg_ver }}
+          DEB_DIR="deb_build/wayclip-cli-${PKG_VER}"
+          echo "13" > "${DEB_DIR}/debian/compat"
 
       - name: Create debian/install file
         run: |
@@ -223,7 +233,7 @@ jobs:
           cd deb_build/wayclip-cli-${PKG_VER}
           export DEBEMAIL="dev@wayclip.com"
           export DEBFULLNAME="Wayclip CI"
-          dch --create -v ${PKG_VER}-1 --package wayclip-cli "New release v${PKG_VER}."
+          dch --create -v ${PKG_VER}-1 --package wayclip-cli --distribution stable "New release v${PKG_VER}."
           cat <<EOF > debian/rules
           #!/usr/bin/make -f
           %:
