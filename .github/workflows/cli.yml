@@ -191,12 +191,6 @@ jobs:
           sed -i 's|ExecStart=.*|ExecStart=/usr/bin/wayclip-daemon|' "${DEB_DIR}/usr/lib/systemd/user/wayclip-daemon.service"
           chmod +x "${DEB_DIR}/usr/bin/"*
 
-      - name: Create debian/compat file
-        run: |
-          PKG_VER=${{ needs.build.outputs.pkg_ver }}
-          DEB_DIR="deb_build/wayclip-cli-${PKG_VER}"
-          echo "13" > "${DEB_DIR}/debian/compat"
-
       - name: Create debian/install file
         run: |
           PKG_VER=${{ needs.build.outputs.pkg_ver }}
