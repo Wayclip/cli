@@ -355,12 +355,12 @@ async fn handle_me() -> Result<()> {
             let usage_gb = profile.storage_used as f64 / 1_073_741_824.0;
             let limit_gb = profile.storage_limit as f64 / 1_073_741_824.0;
             let percentage = if profile.storage_limit > 0 {
-                (usage_gb / limit_gb) * 100.0
+                (profile.storage_used as f64 / profile.storage_limit as f64) * 100.0
             } else {
                 0.0
             };
 
-            println!("{}", "┌─ Your Profile ─────────".bold());
+            println!("{}", "┌─ Your Profile & Status ─────────".bold());
             println!("│ {} {}", "Username:".cyan(), profile.user.username);
             if let Some(email) = &profile.user.email {
                 let verified = if profile.user.email_verified_at.is_some() {
@@ -375,21 +375,39 @@ async fn handle_me() -> Result<()> {
                 "Tier:".cyan(),
                 format!("{:?}", profile.user.tier).green()
             );
-            println!("│ {} {}", "Hosted Clips:".cyan(), profile.clip_count);
-            println!(
-                "│ {} {:.2} GB / {:.2} GB ({:.1}%)",
-                "Storage:".cyan(),
-                usage_gb,
-                limit_gb,
-                percentage
-            );
+
             let two_fa_status = if profile.user.two_factor_enabled {
                 "Enabled ✔".green()
             } else {
                 "Disabled".yellow()
             };
             println!("│ {} {}", "2FA:".cyan(), two_fa_status);
-            println!("└────────────────────────");
+
+            println!("├─ Usage ───────────────────────");
+            println!("│ {} {}", "Hosted Clips:".cyan(), profile.clip_count);
+            println!(
+                "│ {} {:.2} GB / {} GB ({:.1}%)",
+                "Storage:".cyan(),
+                usage_gb,
+                limit_gb,
+                percentage
+            );
+
+            println!("├─ Activity ────────────────────");
+            if let (Some(time), Some(ip)) =
+                (profile.user.last_login_at, &profile.user.last_login_ip)
+            {
+                println!(
+                    "│ {} {}",
+                    "Last Login:".cyan(),
+                    time.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!("│ {} {}", "From IP:".cyan(), ip);
+            } else {
+                println!("│ {}", "No login activity recorded.".cyan());
+            }
+
+            println!("└─────────────────────────────────");
         }
         Err(api::ApiClientError::Unauthorized) => {
             bail!("You are not logged in. Please run `wayclip login` first.");
