@@ -334,7 +334,7 @@ pub async fn handle_2fa_setup() -> Result<()> {
     println!("{}", "◌ Contacting the server to set up 2FA...".yellow());
     let client = api::get_api_client().await?;
     let response = client
-        .post(format!("{}/auth/2fa/setup", settings.api_url))
+        .post(format!("{}/api/2fa/setup", settings.api_url))
         .send()
         .await?;
 
@@ -369,7 +369,7 @@ pub async fn handle_2fa_setup() -> Result<()> {
 
     println!("{}", "◌ Verifying code with the server...".yellow());
     let verify_response = client
-        .post(format!("{}/auth/2fa/verify", settings.api_url))
+        .post(format!("{}/api/2fa/verify", settings.api_url))
         .json(&serde_json::json!({
             "secret": secret,
             "code": code,
