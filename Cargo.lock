@@ -5297,6 +5297,7 @@ dependencies = [
  "uuid",
  "warp",
  "wayclip_core",
+ "which",
 ]
 
 [[package]]

@@ -27,3 +27,4 @@ wayclip_core = "0.1.25"
 reqwest = { version = "0.12.23", features = ["json"] }
 fuzzy-matcher = "0.3.7"
 http = "1.3.1"
+which = "8.0.0"
