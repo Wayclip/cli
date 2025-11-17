@@ -1,3 +1,4 @@
+use crate::model::{AuthCallbackResult, LOCAL_PORT};
 use anyhow::{Context, Result, bail};
 use colored::*;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
@@ -8,14 +9,6 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use wayclip_core::api;
 use wayclip_core::settings::Settings;
-
-const LOCAL_PORT: u16 = 54321;
-
-enum AuthCallbackResult {
-    Success(String),
-    TwoFactor(String),
-    Error(String),
-}
 
 fn parse_token_from_header(response: &reqwest::Response) -> Option<String> {
     response
@@ -431,4 +424,31 @@ fn parse_token_from_request(request: &str) -> Option<AuthCallbackResult> {
         }
     }
     None
+}
+
+pub async fn handle_2fa_status() -> Result<()> {
+    match api::get_current_user().await {
+        Ok(profile) => {
+            if profile.user.two_factor_enabled {
+                println!(
+                    "{}",
+                    "✔ Two-Factor Authentication is ENABLED".green().bold()
+                );
+                println!("Your account is protected with 2FA.");
+            } else {
+                println!(
+                    "{}",
+                    "⚠ Two-Factor Authentication is DISABLED".yellow().bold()
+                );
+                println!("Run `wayclip 2fa setup` to enable 2FA for better security.");
+            }
+        }
+        Err(api::ApiClientError::Unauthorized) => {
+            bail!("You are not logged in. Please run `wayclip login` first.");
+        }
+        Err(e) => {
+            bail!("Failed to fetch profile: {e}");
+        }
+    }
+    Ok(())
 }
