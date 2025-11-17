@@ -77,7 +77,10 @@ pub enum Commands {
         #[arg(default_value_t = false)]
         disable_audio: bool,
     },
-    Login,
+    Login {
+        #[arg(short = 'b', long = "browser")]
+        browser: Option<String>,
+    },
     Logout,
     Me,
     #[command(name = "2fa")]
@@ -347,7 +350,7 @@ async fn run() -> Result<()> {
     }
 
     match &cli.command {
-        Commands::Login => handle_login().await?,
+        Commands::Login { browser } => handle_login(browser).await?,
         Commands::Logout => handle_logout().await?,
         Commands::Me => handle_me().await?,
         Commands::TwoFactorAuth { action } => match action {

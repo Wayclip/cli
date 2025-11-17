@@ -34,7 +34,7 @@ fn parse_token_from_header(response: &reqwest::Response) -> Option<String> {
         })
 }
 
-async fn handle_oauth_login(provider: &str) -> Result<()> {
+async fn handle_oauth_login(provider: &str, browser: &Option<String>) -> Result<()> {
     let settings = Settings::load().await?;
     let (tx, rx) = oneshot::channel::<AuthCallbackResult>();
 
@@ -77,7 +77,19 @@ async fn handle_oauth_login(provider: &str) -> Result<()> {
     );
 
     println!("{}", "○ Opening your browser to complete login...".cyan());
-    if opener::open(&login_url).is_err() {
+    if let Some(browser_cmd) = browser {
+        let status = tokio::process::Command::new(browser_cmd)
+            .arg(&login_url)
+            .spawn();
+
+        if status.is_err() {
+            eprintln!("Failed to open with '{browser_cmd}'. Falling back to system opener.",);
+            if opener::open(&login_url).is_err() {
+                println!("Could not open browser automatically.");
+                println!("Please visit this URL to log in:\n{login_url}");
+            }
+        }
+    } else if opener::open(&login_url).is_err() {
         println!("Could not open browser automatically.");
         println!("Please visit this URL to log in:\n{login_url}");
     }
@@ -91,12 +103,11 @@ async fn handle_oauth_login(provider: &str) -> Result<()> {
     match result {
         AuthCallbackResult::Error(reason) if reason == "port" => {
             bail!(
-                "Could not start local server on port {}. Is another process using it?",
-                LOCAL_PORT
+                "Could not start local server on port {LOCAL_PORT}. Is another process using it?",
             );
         }
         AuthCallbackResult::Error(e) => {
-            bail!("Login failed: {}", e);
+            bail!("Login failed: {e}");
         }
         AuthCallbackResult::Success(token) => {
             api::login(token).await?;
@@ -159,7 +170,7 @@ async fn handle_password_login() -> Result<()> {
 
         api::login(token).await?;
         println!("{}", "✔ Login successful!".green().bold());
-        return Ok(());
+        Ok(())
     } else {
         let error_body: serde_json::Value =
             serde_json::from_str(&response_body_text).unwrap_or_default();
@@ -180,7 +191,7 @@ async fn handle_password_login() -> Result<()> {
             bail!("Please verify your email before logging in.");
         }
 
-        bail!("Login failed: {}", error_msg);
+        bail!("Login failed: {error_msg}");
     }
 }
 
@@ -217,7 +228,7 @@ async fn handle_2fa_authentication(two_fa_token: &str) -> Result<()> {
         let error_msg = error_body["message"]
             .as_str()
             .unwrap_or("Invalid 2FA code.");
-        bail!("2FA authentication failed: {}", error_msg);
+        bail!("2FA authentication failed: {error_msg}");
     }
 }
 
@@ -269,7 +280,7 @@ async fn handle_register() -> Result<()> {
     let error_msg = error_body["message"]
         .as_str()
         .unwrap_or("Registration failed.");
-    bail!("Registration failed: {}", error_msg);
+    bail!("Registration failed: {error_msg}");
 }
 
 async fn handle_resend_verification(email: &str) -> Result<()> {
@@ -296,7 +307,7 @@ async fn handle_resend_verification(email: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_login() -> Result<()> {
+pub async fn handle_login(browser: &Option<String>) -> Result<()> {
     let options = vec![
         "GitHub",
         "Google",
@@ -308,7 +319,7 @@ pub async fn handle_login() -> Result<()> {
 
     match choice {
         "GitHub" | "Google" | "Discord" => {
-            handle_oauth_login(&choice.to_lowercase()).await?;
+            handle_oauth_login(&choice.to_lowercase(), browser).await?;
         }
         "Email/Password" => {
             handle_password_login().await?;
@@ -340,10 +351,7 @@ pub async fn handle_2fa_setup() -> Result<()> {
 
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        bail!(
-            "Failed to initialize 2FA setup. Are you logged in? Server response: {}",
-            error_text
-        );
+        bail!("Failed to initialize 2FA setup. Are you logged in? Server response: {error_text}",);
     }
 
     let setup_data: Value = response.json().await?;
