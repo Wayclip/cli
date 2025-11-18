@@ -1,26 +1,15 @@
+use crate::model::ClipDisplay;
+use crate::validate::sanitize_and_validate_filename_stem;
 use crate::{copy_to_clipboard, handle_edit, handle_share, handle_view};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use colored::*;
 use inquire::{Confirm, Select, Text};
-use std::fmt;
 use std::path::Path;
 use wayclip_core::{
     api, delete_file, gather_unified_clips, models::UnifiedClipData, rename_all_entries,
     update_liked,
 };
-
-#[derive(Clone)]
-struct ClipDisplay {
-    name: String,
-    display_string: String,
-}
-
-impl fmt::Display for ClipDisplay {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.display_string)
-    }
-}
 
 fn generate_display_string(clip: &UnifiedClipData) -> String {
     let now = Utc::now();
@@ -45,22 +34,6 @@ fn generate_display_string(clip: &UnifiedClipData) -> String {
             "".normal().to_string()
         }
     )
-}
-
-fn sanitize_and_validate_filename_stem(new_name_input: &str) -> Result<String> {
-    let trimmed = new_name_input.trim();
-    if trimmed.is_empty() {
-        bail!("New name cannot be empty.");
-    }
-
-    let sanitized = trimmed.replace(' ', "_");
-    if sanitized
-        .chars()
-        .any(|c| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
-    {
-        bail!("New name contains invalid characters (< > : \" / \\ | ? *).");
-    }
-    Ok(sanitized.to_string())
 }
 
 pub async fn handle_manage() -> Result<()> {
