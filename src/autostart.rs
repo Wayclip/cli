@@ -17,13 +17,17 @@ pub async fn handle_autostart_on() -> Result<()> {
 Description=Wayclip Daemon
 After=graphical.target pipewire.service pipewire-pulse.service
 Wants=graphical.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 ExecStart={}
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 Type=notify
 TimeoutStartSec=90
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target
